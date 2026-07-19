@@ -20,32 +20,33 @@ import java.util.Stack;
  * Single overlay window that switches between the standard menu and profile.
  */
 public class SAOMenu {
+
     private static final double MENU_WIDTH = 280;
     private static final double MENU_HEIGHT = 500;
 
     private static final String BASE_STYLE =
-            "-fx-background-color: transparent;" +
-            "-fx-text-fill: white;" +
-            "-fx-font-size: 16px;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 10 20 10 20;";
+            "-fx-background-color: transparent;"
+                    + "-fx-text-fill: white;"
+                    + "-fx-font-size: 16px;"
+                    + "-fx-alignment: center-left;"
+                    + "-fx-padding: 10 20 10 20;";
 
     private static final String HOVER_STYLE =
-            "-fx-background-color: rgba(255,255,255,0.2);" +
-            "-fx-text-fill: orange;" +
-            "-fx-font-size: 16px;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 10 20 10 20;";
+            "-fx-background-color: rgba(255,255,255,0.2);"
+                    + "-fx-text-fill: orange;"
+                    + "-fx-font-size: 16px;"
+                    + "-fx-alignment: center-left;"
+                    + "-fx-padding: 10 20 10 20;";
 
     private static final String PROFILE_STYLE =
-            "-fx-background-color: rgba(255,153,0,0.1);" +
-            "-fx-text-fill: #ff9900;" +
-            "-fx-font-size: 16px;" +
-            "-fx-font-weight: bold;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 12 20 12 20;" +
-            "-fx-border-color: rgba(255,153,0,0.3);" +
-            "-fx-border-width: 0 0 1 0;";
+            "-fx-background-color: rgba(255,153,0,0.1);"
+                    + "-fx-text-fill: #ff9900;"
+                    + "-fx-font-size: 16px;"
+                    + "-fx-font-weight: bold;"
+                    + "-fx-alignment: center-left;"
+                    + "-fx-padding: 12 20 12 20;"
+                    + "-fx-border-color: rgba(255,153,0,0.3);"
+                    + "-fx-border-width: 0 0 1 0;";
 
     private final Stack<List<MenuNode>> history = new Stack<>();
     private final MenuScreenContext screenContext = new MenuScreenContext();
@@ -56,7 +57,6 @@ public class SAOMenu {
     private Pane rootPane;
     private VBox menuContainer;
     private ProfileView profileView;
-
     private List<MenuNode> rootMenu;
     private String currentActiveUser = "Guest";
 
@@ -117,11 +117,11 @@ public class SAOMenu {
         container.setMinSize(MENU_WIDTH, MENU_HEIGHT);
         container.setMaxSize(MENU_WIDTH, MENU_HEIGHT);
         container.setStyle(
-                "-fx-background-color: rgba(30, 30, 30, 0.95);" +
-                "-fx-background-radius: 15;" +
-                "-fx-border-color: white;" +
-                "-fx-border-width: 1;" +
-                "-fx-border-radius: 15;"
+                "-fx-background-color: rgba(30, 30, 30, 0.95);"
+                        + "-fx-background-radius: 15;"
+                        + "-fx-border-color: white;"
+                        + "-fx-border-width: 1;"
+                        + "-fx-border-radius: 15;"
         );
 
         container.setOnMousePressed(event -> {
@@ -129,11 +129,13 @@ public class SAOMenu {
                 event.consume();
             }
         });
+
         container.setOnMouseReleased(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();
             }
         });
+
         return container;
     }
 
@@ -147,13 +149,15 @@ public class SAOMenu {
             try {
                 new ProcessBuilder("notepad.exe").start();
             } catch (Exception exception) {
-                System.err.println("[Menu] Не удалось запустить Notepad: " + exception.getMessage());
+                System.err.println(
+                        "[Menu] Не удалось запустить Notepad: " + exception.getMessage()
+                );
             }
         });
 
-        MenuNode subMenu = new MenuNode("Files", "\uD83D\uDCC2", null);
-        subMenu.addChild(new MenuNode("Documents", "\uD83D\uDCC4", () -> System.out.println("Open Docs")));
-        subMenu.addChild(new MenuNode("Pictures", "\uD83D\uDDBC", () -> System.out.println("Open Pics")));
+        MenuNode subMenu = new MenuNode("Files", "📂", null);
+        subMenu.addChild(new MenuNode("Documents", "📄", () -> System.out.println("Open Docs")));
+        subMenu.addChild(new MenuNode("Pictures", "🖼", () -> System.out.println("Open Pics")));
 
         MenuNode settings = new MenuNode("Settings", "⚙", null);
         settings.addChild(new MenuNode("Log Out", "⎋", () -> {
@@ -197,6 +201,7 @@ public class SAOMenu {
                     }
                 }
             });
+
             menuContainer.getChildren().add(button);
         }
     }
@@ -217,6 +222,7 @@ public class SAOMenu {
      */
     public void showMenu(String username, double mouseX, double mouseY) {
         currentActiveUser = normalizeUsername(username);
+
         if (mainStage == null) {
             init();
         }
@@ -230,10 +236,8 @@ public class SAOMenu {
         buildInitialMenu();
         renderLevel(rootMenu);
         profileView.setUsername(currentActiveUser);
-
         stateController.showStandardMenu();
-        mainStage.show();
-        mainStage.requestFocus();
+        focusMenu();
     }
 
     /**
@@ -250,6 +254,20 @@ public class SAOMenu {
 
         profileView.setUsername(currentActiveUser);
         stateController.showProfile();
+        focusMenu();
+    }
+
+    /**
+     * Brings an already visible SAOIM overlay to the foreground without
+     * rebuilding it or changing the selected monitor.
+     */
+    public void focusMenu() {
+        if (mainStage == null || stateController.getState() == MenuState.HIDDEN) {
+            return;
+        }
+
+        ensureStageVisible();
+        mainStage.toFront();
         mainStage.requestFocus();
     }
 

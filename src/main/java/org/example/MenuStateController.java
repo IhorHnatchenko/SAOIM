@@ -8,8 +8,14 @@ import java.util.function.Consumer;
  * UI rendering is delegated through the stateChanged callback.
  */
 public final class MenuStateController {
+
     private final Consumer<MenuState> stateChanged;
-    private MenuState state = MenuState.HIDDEN;
+
+    /**
+     * Read by the JNativeHook thread through GestureRouter and changed on the
+     * JavaFX thread. volatile guarantees visibility of the latest enum value.
+     */
+    private volatile MenuState state = MenuState.HIDDEN;
 
     public MenuStateController(Consumer<MenuState> stateChanged) {
         this.stateChanged = Objects.requireNonNull(stateChanged, "stateChanged");
