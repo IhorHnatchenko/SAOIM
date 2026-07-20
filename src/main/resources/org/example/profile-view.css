@@ -1,0 +1,145 @@
+.profile-view {
+    -fx-background-color:
+        radial-gradient(center 62% 50%, radius 70%, rgba(3, 31, 61, 0.34), rgba(0, 5, 14, 0.10) 70%, transparent 100%);
+}
+
+.profile-card {
+    -fx-background-color: linear-gradient(to bottom right, rgba(4, 30, 55, 0.97), rgba(2, 15, 32, 0.96));
+    -fx-background-radius: 9;
+    -fx-border-color: rgba(72, 199, 255, 0.90), rgba(21, 103, 175, 0.65);
+    -fx-border-width: 1.5, 1;
+    -fx-border-insets: 0, 5;
+    -fx-border-radius: 9, 5;
+    -fx-effect: dropshadow(gaussian, rgba(18, 157, 255, 0.55), 18, 0.22, 0, 0);
+}
+
+.profile-card__header {
+    -fx-text-fill: #7fcfff;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.profile-card__nickname {
+    -fx-text-fill: #55dfff;
+    -fx-font-size: 21px;
+    -fx-font-weight: bold;
+}
+
+.profile-card__title,
+.profile-card__xp-text {
+    -fx-text-fill: #91aac6;
+    -fx-font-size: 12px;
+}
+
+.profile-card__level {
+    -fx-text-fill: #7cdfff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.profile-card__footer {
+    -fx-text-fill: rgba(85, 190, 235, 0.58);
+    -fx-font-size: 9px;
+}
+
+.profile-avatar__outer {
+    -fx-fill: rgba(3, 24, 47, 0.92);
+    -fx-stroke: #43cfff;
+    -fx-stroke-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(23, 170, 255, 0.85), 14, 0.35, 0, 0);
+}
+
+.profile-avatar__inner {
+    -fx-fill: radial-gradient(center 50% 38%, radius 70%, #0d4268, #031526 80%);
+    -fx-stroke: rgba(82, 203, 255, 0.55);
+    -fx-stroke-width: 1;
+}
+
+.profile-card__xp-bar {
+    -fx-accent: #35c8ff;
+}
+
+.profile-card__xp-bar > .track {
+    -fx-background-color: rgba(11, 50, 76, 0.96);
+    -fx-background-radius: 2;
+    -fx-pref-height: 5;
+}
+
+.profile-card__xp-bar > .bar {
+    -fx-background-color: linear-gradient(to right, #1ba8e6, #56e0ff);
+    -fx-background-radius: 2;
+    -fx-background-insets: 0;
+}
+
+.static-orbit-pane {
+    -fx-background-color: transparent;
+}
+
+.command-crystal__glow {
+    -fx-fill: radial-gradient(center 50% 50%, radius 60%, rgba(24, 151, 255, 0.16), rgba(5, 29, 64, 0.05) 70%, transparent 100%);
+    -fx-stroke: rgba(45, 174, 255, 0.28);
+    -fx-stroke-width: 1;
+}
+
+.command-crystal__core {
+    -fx-fill: radial-gradient(center 50% 42%, radius 65%, #7eeeff, #1b8fe3 45%, #052c5c 100%);
+    -fx-stroke: #b7f7ff;
+    -fx-stroke-width: 1.4;
+    -fx-effect: dropshadow(gaussian, rgba(52, 203, 255, 0.95), 25, 0.45, 0, 0);
+}
+
+.command-crystal__outer {
+    -fx-fill: rgba(7, 67, 124, 0.22);
+    -fx-stroke: #49cfff;
+    -fx-stroke-width: 2.2;
+    -fx-effect: dropshadow(gaussian, rgba(37, 157, 255, 0.72), 18, 0.3, 0, 0);
+}
+
+.command-crystal__inner {
+    -fx-fill: rgba(27, 132, 219, 0.25);
+    -fx-stroke: #9fefff;
+    -fx-stroke-width: 1.5;
+}
+
+.command-crystal__title {
+    -fx-text-fill: #d9f7ff;
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(52, 190, 255, 0.9), 8, 0.25, 0, 0);
+}
+
+.command-crystal__subtitle {
+    -fx-text-fill: #78aacf;
+    -fx-font-size: 11px;
+}
+
+.orbit-item {
+    -fx-background-color: linear-gradient(to bottom right, rgba(7, 45, 80, 0.97), rgba(3, 19, 39, 0.97));
+    -fx-background-radius: 18;
+    -fx-border-color: rgba(94, 216, 255, 0.92), rgba(27, 109, 178, 0.66);
+    -fx-border-width: 1.5, 1;
+    -fx-border-insets: 0, 5;
+    -fx-border-radius: 18, 14;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(25, 143, 232, 0.48), 12, 0.22, 0, 0);
+}
+
+.orbit-item:hover,
+.orbit-item:selected {
+    -fx-background-color: linear-gradient(to bottom right, rgba(15, 87, 137, 0.98), rgba(5, 36, 71, 0.98));
+    -fx-border-color: #b5f5ff, #45caff;
+    -fx-effect: dropshadow(gaussian, rgba(76, 215, 255, 0.92), 22, 0.38, 0, 0);
+}
+
+.orbit-item__icon {
+    -fx-text-fill: #9beeff;
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+}
+
+.orbit-item__title {
+    -fx-text-fill: #d9efff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-alignment: center;
+}
