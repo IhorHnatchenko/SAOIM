@@ -1,145 +1,216 @@
 .profile-view {
-    -fx-background-color:
-        radial-gradient(center 62% 50%, radius 70%, rgba(3, 31, 61, 0.34), rgba(0, 5, 14, 0.10) 70%, transparent 100%);
+    -fx-font-family: "Segoe UI", "Arial";
 }
 
 .profile-card {
-    -fx-background-color: linear-gradient(to bottom right, rgba(4, 30, 55, 0.97), rgba(2, 15, 32, 0.96));
-    -fx-background-radius: 9;
-    -fx-border-color: rgba(72, 199, 255, 0.90), rgba(21, 103, 175, 0.65);
-    -fx-border-width: 1.5, 1;
-    -fx-border-insets: 0, 5;
-    -fx-border-radius: 9, 5;
-    -fx-effect: dropshadow(gaussian, rgba(18, 157, 255, 0.55), 18, 0.22, 0, 0);
+    -fx-background-color: rgba(3, 18, 38, 0.93);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(73, 195, 255, 0.88);
+    -fx-border-width: 1.2;
+    -fx-border-radius: 10;
+    -fx-effect: dropshadow(gaussian, rgba(26, 164, 255, 0.44), 18, 0.24, 0, 0);
 }
 
 .profile-card__header {
-    -fx-text-fill: #7fcfff;
+    -fx-text-fill: rgba(142, 207, 255, 0.86);
     -fx-font-size: 12px;
     -fx-font-weight: bold;
 }
 
 .profile-card__nickname {
-    -fx-text-fill: #55dfff;
-    -fx-font-size: 21px;
+    -fx-text-fill: #55d9ff;
+    -fx-font-size: 20px;
     -fx-font-weight: bold;
 }
 
 .profile-card__title,
-.profile-card__xp-text {
-    -fx-text-fill: #91aac6;
-    -fx-font-size: 12px;
+.profile-card__xp-text,
+.profile-card__footer {
+    -fx-text-fill: rgba(161, 202, 236, 0.86);
+    -fx-font-size: 11px;
 }
 
 .profile-card__level {
-    -fx-text-fill: #7cdfff;
+    -fx-text-fill: #61dfff;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
 }
 
 .profile-card__footer {
-    -fx-text-fill: rgba(85, 190, 235, 0.58);
-    -fx-font-size: 9px;
+    -fx-opacity: 0.64;
 }
 
 .profile-avatar__outer {
-    -fx-fill: rgba(3, 24, 47, 0.92);
-    -fx-stroke: #43cfff;
-    -fx-stroke-width: 2;
-    -fx-effect: dropshadow(gaussian, rgba(23, 170, 255, 0.85), 14, 0.35, 0, 0);
+    -fx-fill: rgba(7, 70, 120, 0.30);
+    -fx-stroke: #56d9ff;
+    -fx-stroke-width: 1.5;
+    -fx-effect: dropshadow(gaussian, rgba(41, 186, 255, 0.72), 15, 0.25, 0, 0);
 }
 
 .profile-avatar__inner {
-    -fx-fill: radial-gradient(center 50% 38%, radius 70%, #0d4268, #031526 80%);
-    -fx-stroke: rgba(82, 203, 255, 0.55);
+    -fx-fill: rgba(2, 18, 38, 0.95);
+    -fx-stroke: rgba(35, 132, 213, 0.88);
     -fx-stroke-width: 1;
 }
 
 .profile-card__xp-bar {
-    -fx-accent: #35c8ff;
+    -fx-accent: #36c8ff;
 }
 
 .profile-card__xp-bar > .track {
-    -fx-background-color: rgba(11, 50, 76, 0.96);
-    -fx-background-radius: 2;
-    -fx-pref-height: 5;
+    -fx-background-color: rgba(29, 69, 103, 0.72);
+    -fx-background-radius: 3;
 }
 
 .profile-card__xp-bar > .bar {
-    -fx-background-color: linear-gradient(to right, #1ba8e6, #56e0ff);
-    -fx-background-radius: 2;
-    -fx-background-insets: 0;
+    -fx-background-color: linear-gradient(to right, #1b83d8, #4de1ff);
+    -fx-background-radius: 3;
 }
 
-.static-orbit-pane {
+.circular-menu-pane {
     -fx-background-color: transparent;
 }
 
+.command-crystal {
+    -fx-background-color: transparent;
+    -fx-padding: 24;
+}
+
 .command-crystal__glow {
-    -fx-fill: radial-gradient(center 50% 50%, radius 60%, rgba(24, 151, 255, 0.16), rgba(5, 29, 64, 0.05) 70%, transparent 100%);
-    -fx-stroke: rgba(45, 174, 255, 0.28);
+    -fx-fill: rgba(15, 114, 214, 0.08);
+    -fx-stroke: rgba(38, 155, 255, 0.28);
     -fx-stroke-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(30, 153, 255, 0.50), 28, 0.20, 0, 0);
 }
 
 .command-crystal__core {
-    -fx-fill: radial-gradient(center 50% 42%, radius 65%, #7eeeff, #1b8fe3 45%, #052c5c 100%);
-    -fx-stroke: #b7f7ff;
-    -fx-stroke-width: 1.4;
-    -fx-effect: dropshadow(gaussian, rgba(52, 203, 255, 0.95), 25, 0.45, 0, 0);
+    -fx-fill: rgba(87, 234, 255, 0.88);
+    -fx-stroke: white;
+    -fx-stroke-width: 0.8;
+    -fx-effect: dropshadow(gaussian, rgba(61, 218, 255, 0.92), 22, 0.45, 0, 0);
 }
 
 .command-crystal__outer {
-    -fx-fill: rgba(7, 67, 124, 0.22);
-    -fx-stroke: #49cfff;
-    -fx-stroke-width: 2.2;
-    -fx-effect: dropshadow(gaussian, rgba(37, 157, 255, 0.72), 18, 0.3, 0, 0);
+    -fx-fill: rgba(5, 74, 144, 0.17);
+    -fx-stroke: #3ccfff;
+    -fx-stroke-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(35, 154, 255, 0.66), 17, 0.28, 0, 0);
 }
 
 .command-crystal__inner {
-    -fx-fill: rgba(27, 132, 219, 0.25);
-    -fx-stroke: #9fefff;
+    -fx-fill: rgba(14, 105, 208, 0.18);
+    -fx-stroke: rgba(92, 230, 255, 0.96);
     -fx-stroke-width: 1.5;
 }
 
+.command-crystal:back-available {
+    -fx-effect: dropshadow(gaussian, rgba(126, 88, 255, 0.46), 22, 0.24, 0, 0);
+}
+
+.command-crystal:focused .command-crystal__outer {
+    -fx-stroke: white;
+}
+
 .command-crystal__title {
-    -fx-text-fill: #d9f7ff;
-    -fx-font-size: 17px;
+    -fx-text-fill: #e9f9ff;
+    -fx-font-size: 18px;
     -fx-font-weight: bold;
-    -fx-effect: dropshadow(gaussian, rgba(52, 190, 255, 0.9), 8, 0.25, 0, 0);
+    -fx-text-alignment: center;
 }
 
 .command-crystal__subtitle {
-    -fx-text-fill: #78aacf;
+    -fx-text-fill: rgba(153, 208, 244, 0.82);
     -fx-font-size: 11px;
+    -fx-text-alignment: center;
 }
 
 .orbit-item {
-    -fx-background-color: linear-gradient(to bottom right, rgba(7, 45, 80, 0.97), rgba(3, 19, 39, 0.97));
-    -fx-background-radius: 18;
-    -fx-border-color: rgba(94, 216, 255, 0.92), rgba(27, 109, 178, 0.66);
-    -fx-border-width: 1.5, 1;
-    -fx-border-insets: 0, 5;
-    -fx-border-radius: 18, 14;
-    -fx-cursor: hand;
-    -fx-effect: dropshadow(gaussian, rgba(25, 143, 232, 0.48), 12, 0.22, 0, 0);
+    -fx-background-color: rgba(4, 29, 60, 0.92);
+    -fx-background-radius: 13;
+    -fx-border-color: rgba(75, 199, 255, 0.80);
+    -fx-border-width: 1.2;
+    -fx-border-radius: 13;
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, rgba(27, 143, 232, 0.40), 12, 0.18, 0, 0);
 }
 
 .orbit-item:hover,
+.orbit-item:focused {
+    -fx-background-color: rgba(8, 53, 98, 0.96);
+    -fx-border-color: #83e8ff;
+    -fx-effect: dropshadow(gaussian, rgba(53, 199, 255, 0.72), 18, 0.26, 0, 0);
+}
+
 .orbit-item:selected {
-    -fx-background-color: linear-gradient(to bottom right, rgba(15, 87, 137, 0.98), rgba(5, 36, 71, 0.98));
-    -fx-border-color: #b5f5ff, #45caff;
-    -fx-effect: dropshadow(gaussian, rgba(76, 215, 255, 0.92), 22, 0.38, 0, 0);
+    -fx-background-color: rgba(34, 50, 116, 0.96);
+    -fx-border-color: #b996ff;
+    -fx-effect: dropshadow(gaussian, rgba(137, 96, 255, 0.78), 20, 0.30, 0, 0);
+}
+
+.orbit-item:category {
+    -fx-border-width: 1.4;
+}
+
+.orbit-item:leaf {
+    -fx-border-color: rgba(124, 155, 255, 0.78);
 }
 
 .orbit-item__icon {
-    -fx-text-fill: #9beeff;
-    -fx-font-size: 28px;
+    -fx-text-fill: #8cecff;
+    -fx-font-size: 22px;
     -fx-font-weight: bold;
 }
 
 .orbit-item__title {
-    -fx-text-fill: #d9efff;
-    -fx-font-size: 13px;
+    -fx-text-fill: #eefaff;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
-    -fx-alignment: center;
+    -fx-text-alignment: center;
+}
+
+.orbit-item__marker {
+    -fx-text-fill: rgba(112, 190, 232, 0.64);
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
+}
+
+.orbit-page-button {
+    -fx-background-color: rgba(4, 33, 69, 0.94);
+    -fx-background-radius: 50%;
+    -fx-border-color: rgba(74, 205, 255, 0.86);
+    -fx-border-radius: 50%;
+    -fx-border-width: 1.2;
+    -fx-text-fill: #9cecff;
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-padding: 0;
+    -fx-effect: dropshadow(gaussian, rgba(34, 156, 242, 0.42), 12, 0.20, 0, 0);
+}
+
+.orbit-page-button:hover,
+.orbit-page-button:focused {
+    -fx-background-color: rgba(10, 74, 131, 0.98);
+    -fx-border-color: white;
+}
+
+.orbit-page-button:disabled {
+    -fx-opacity: 0.24;
+}
+
+.orbit-page-indicator {
+    -fx-text-fill: rgba(128, 211, 255, 0.88);
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(2, 18, 38, 0.78);
+    -fx-background-radius: 9;
+    -fx-border-color: rgba(56, 169, 232, 0.45);
+    -fx-border-radius: 9;
+    -fx-padding: 4 10 4 10;
+}
+
+.orbit-breadcrumb {
+    -fx-text-fill: rgba(118, 199, 240, 0.72);
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-alignment: center;
 }

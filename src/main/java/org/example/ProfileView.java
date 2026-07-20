@@ -6,7 +6,7 @@ import javafx.scene.layout.Pane;
 import java.net.URL;
 
 /**
- * Step 3 profile screen: profile card, command crystal and five static items.
+ * Profile screen: profile card and the interactive circular menu.
  */
 public final class ProfileView extends Pane {
 
@@ -14,14 +14,16 @@ public final class ProfileView extends Pane {
     private static final double DEFAULT_MARGIN = 30;
 
     private final ProfileCard profileCard = new ProfileCard();
-    private final StaticOrbitPane orbitPane = new StaticOrbitPane();
+    private final CircularMenuPane orbitPane =
+            new CircularMenuPane(DemoOrbitData.createRootEntries());
+
     private UserProfile profile = UserProfile.starter("Guest");
 
     public ProfileView() {
         getStyleClass().add("profile-view");
         setPickOnBounds(false);
 
-        URL stylesheet = ProfileView.class.getResource("profile-view.css");
+        URL stylesheet = ProfileView.class.getResource("/org/example/profile-view.css");
         if (stylesheet != null) {
             getStylesheets().add(stylesheet.toExternalForm());
         } else {
@@ -30,7 +32,6 @@ public final class ProfileView extends Pane {
 
         getChildren().addAll(profileCard, orbitPane);
         profileCard.setProfile(profile);
-
         consumeSecondaryClicks(profileCard);
     }
 
@@ -47,6 +48,21 @@ public final class ProfileView extends Pane {
         return profile;
     }
 
+    /**
+     * @return true when Esc was consumed by nested orbit navigation.
+     */
+    public boolean handleEscape() {
+        return orbitPane.handleEscape();
+    }
+
+    public void resetOrbitNavigation() {
+        orbitPane.resetNavigation();
+    }
+
+    public CircularMenuPane getOrbitPane() {
+        return orbitPane;
+    }
+
     @Override
     protected void layoutChildren() {
         double width = getWidth();
@@ -55,17 +71,26 @@ public final class ProfileView extends Pane {
             return;
         }
 
-        double viewportScale = clamp(Math.min(width / 1920.0, height / 1080.0), 0.78, 1.10);
+        double viewportScale = clamp(
+                Math.min(width / 1920.0, height / 1080.0),
+                0.78,
+                1.10
+        );
         profileCard.applyViewportScale(viewportScale);
 
-        double margin = clamp(Math.min(width, height) * 0.028, MIN_MARGIN, DEFAULT_MARGIN);
+        double margin = clamp(
+                Math.min(width, height) * 0.028,
+                MIN_MARGIN,
+                DEFAULT_MARGIN
+        );
         double cardWidth = profileCard.getScaledDesignWidth();
         double cardHeight = profileCard.getScaledDesignHeight();
 
-        // Because scaling is performed around the node center, compensate so the
-        // visual card remains anchored to the upper-left margin.
+        // Scaling occurs around the node center; compensate to keep the visual
+        // profile card anchored to the upper-left corner.
         double scaleXCompensation = (cardWidth - profileCard.getPrefWidth()) / 2.0;
         double scaleYCompensation = (cardHeight - profileCard.getPrefHeight()) / 2.0;
+
         profileCard.resizeRelocate(
                 margin + scaleXCompensation,
                 margin + scaleYCompensation,

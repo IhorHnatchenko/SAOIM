@@ -25,32 +25,33 @@ public class SAOMenu {
     private static final double MENU_HEIGHT = 500;
 
     private static final String BASE_STYLE =
-            "-fx-background-color: transparent;"
-                    + "-fx-text-fill: white;"
-                    + "-fx-font-size: 16px;"
-                    + "-fx-alignment: center-left;"
-                    + "-fx-padding: 10 20 10 20;";
+            "-fx-background-color: transparent;" +
+            "-fx-text-fill: white;" +
+            "-fx-font-size: 16px;" +
+            "-fx-alignment: center-left;" +
+            "-fx-padding: 10 20 10 20;";
 
     private static final String HOVER_STYLE =
-            "-fx-background-color: rgba(255,255,255,0.2);"
-                    + "-fx-text-fill: orange;"
-                    + "-fx-font-size: 16px;"
-                    + "-fx-alignment: center-left;"
-                    + "-fx-padding: 10 20 10 20;";
+            "-fx-background-color: rgba(255,255,255,0.2);" +
+            "-fx-text-fill: orange;" +
+            "-fx-font-size: 16px;" +
+            "-fx-alignment: center-left;" +
+            "-fx-padding: 10 20 10 20;";
 
     private static final String PROFILE_STYLE =
-            "-fx-background-color: rgba(255,153,0,0.1);"
-                    + "-fx-text-fill: #ff9900;"
-                    + "-fx-font-size: 16px;"
-                    + "-fx-font-weight: bold;"
-                    + "-fx-alignment: center-left;"
-                    + "-fx-padding: 12 20 12 20;"
-                    + "-fx-border-color: rgba(255,153,0,0.3);"
-                    + "-fx-border-width: 0 0 1 0;";
+            "-fx-background-color: rgba(255,153,0,0.1);" +
+            "-fx-text-fill: #ff9900;" +
+            "-fx-font-size: 16px;" +
+            "-fx-font-weight: bold;" +
+            "-fx-alignment: center-left;" +
+            "-fx-padding: 12 20 12 20;" +
+            "-fx-border-color: rgba(255,153,0,0.3);" +
+            "-fx-border-width: 0 0 1 0;";
 
     private final Stack<List<MenuNode>> history = new Stack<>();
     private final MenuScreenContext screenContext = new MenuScreenContext();
-    private final MenuStateController stateController = new MenuStateController(this::applyState);
+    private final MenuStateController stateController =
+            new MenuStateController(this::applyState);
 
     private Stage mainStage;
     private Stage dummyOwner;
@@ -86,7 +87,8 @@ public class SAOMenu {
         profileView.prefHeightProperty().bind(rootPane.heightProperty());
 
         rootPane.setOnMouseReleased(event -> {
-            boolean emptyOverlayArea = event.getTarget() == rootPane || event.getTarget() == profileView;
+            boolean emptyOverlayArea =
+                    event.getTarget() == rootPane || event.getTarget() == profileView;
             if (event.getButton() == MouseButton.SECONDARY && emptyOverlayArea) {
                 event.consume();
                 hideMenu();
@@ -97,8 +99,16 @@ public class SAOMenu {
         Scene scene = new Scene(rootPane);
         scene.setFill(Color.TRANSPARENT);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
-            if (event.getCode() == KeyCode.ESCAPE) {
-                event.consume();
+            if (event.getCode() != KeyCode.ESCAPE) {
+                return;
+            }
+
+            event.consume();
+            boolean handledByOrbit =
+                    stateController.getState() == MenuState.PROFILE
+                    && profileView.handleEscape();
+
+            if (!handledByOrbit) {
                 stateController.handleEscape();
             }
         });
@@ -118,25 +128,22 @@ public class SAOMenu {
         container.setMinSize(MENU_WIDTH, MENU_HEIGHT);
         container.setMaxSize(MENU_WIDTH, MENU_HEIGHT);
         container.setStyle(
-                "-fx-background-color: rgba(30, 30, 30, 0.95);"
-                        + "-fx-background-radius: 15;"
-                        + "-fx-border-color: white;"
-                        + "-fx-border-width: 1;"
-                        + "-fx-border-radius: 15;"
+                "-fx-background-color: rgba(30, 30, 30, 0.95);" +
+                "-fx-background-radius: 15;" +
+                "-fx-border-color: white;" +
+                "-fx-border-width: 1;" +
+                "-fx-border-radius: 15;"
         );
-
         container.setOnMousePressed(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();
             }
         });
-
         container.setOnMouseReleased(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();
             }
         });
-
         return container;
     }
 
@@ -156,9 +163,11 @@ public class SAOMenu {
             }
         });
 
-        MenuNode subMenu = new MenuNode("Files", "📂", null);
-        subMenu.addChild(new MenuNode("Documents", "📄", () -> System.out.println("Open Docs")));
-        subMenu.addChild(new MenuNode("Pictures", "🖼", () -> System.out.println("Open Pics")));
+        MenuNode subMenu = new MenuNode("Files", "", null);
+        subMenu.addChild(new MenuNode("Documents", "", () ->
+                System.out.println("Open Docs")));
+        subMenu.addChild(new MenuNode("Pictures", "", () ->
+                System.out.println("Open Pics")));
 
         MenuNode settings = new MenuNode("Settings", "⚙", null);
         settings.addChild(new MenuNode("Log Out", "⎋", () -> {
@@ -202,7 +211,6 @@ public class SAOMenu {
                     }
                 }
             });
-
             menuContainer.getChildren().add(button);
         }
     }
@@ -223,11 +231,9 @@ public class SAOMenu {
      */
     public void showMenu(String username, double mouseX, double mouseY) {
         currentActiveUser = normalizeUsername(username);
-
         if (mainStage == null) {
             init();
         }
-
         if (stateController.getState() == MenuState.HIDDEN) {
             screenContext.captureIfAbsent(mouseX, mouseY);
         }
@@ -241,9 +247,6 @@ public class SAOMenu {
         focusMenu();
     }
 
-    /**
-     * Compatibility overload for calls that do not provide mouse coordinates.
-     */
     public void showMenu(String username) {
         showMenu(username, Double.NaN, Double.NaN);
     }
@@ -252,21 +255,15 @@ public class SAOMenu {
         if (mainStage == null || stateController.getState() != MenuState.STANDARD_MENU) {
             return;
         }
-
         profileView.setUsername(currentActiveUser);
         stateController.showProfile();
         focusMenu();
     }
 
-    /**
-     * Brings an already visible SAOIM overlay to the foreground without
-     * rebuilding it or changing the selected monitor.
-     */
     public void focusMenu() {
         if (mainStage == null || stateController.getState() == MenuState.HIDDEN) {
             return;
         }
-
         ensureStageVisible();
         mainStage.toFront();
         mainStage.requestFocus();
@@ -295,6 +292,7 @@ public class SAOMenu {
                 menuContainer.setManaged(false);
                 profileView.setVisible(false);
                 profileView.setManaged(false);
+                profileView.resetOrbitNavigation();
                 mainStage.hide();
                 screenContext.reset();
                 System.out.println("[Navigation] HIDDEN");
@@ -334,7 +332,9 @@ public class SAOMenu {
         mainStage.setHeight(bounds.getHeight());
 
         menuContainer.setLayoutX(50);
-        menuContainer.setLayoutY(Math.max(20, (bounds.getHeight() - MENU_HEIGHT) / 2.0));
+        menuContainer.setLayoutY(
+                Math.max(20, (bounds.getHeight() - MENU_HEIGHT) / 2.0)
+        );
     }
 
     private String normalizeUsername(String username) {

@@ -1,6 +1,9 @@
 package org.example;
 
+import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
+import javafx.scene.AccessibleRole;
+import javafx.scene.Cursor;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
@@ -11,9 +14,12 @@ import javafx.scene.shape.Line;
 import javafx.scene.shape.Polygon;
 
 /**
- * Static central crystal for step 3. Navigation behavior is added in step 4.
+ * Central command crystal. In step 4 it also acts as the Back button.
  */
 public final class CommandCrystal extends StackPane {
+
+    private static final PseudoClass BACK_AVAILABLE =
+            PseudoClass.getPseudoClass("back-available");
 
     private final Pane artwork = new Pane();
     private final Circle glow = new Circle();
@@ -22,11 +28,16 @@ public final class CommandCrystal extends StackPane {
     private final Polygon innerDiamond = new Polygon();
     private final Line[] spokes = new Line[6];
     private final Label titleLabel = new Label("Центр управления");
-    private final Label subtitleLabel = new Label("Ядро системы");
+    private final Label subtitleLabel = new Label("Корень категорий");
+
+    private boolean backAvailable;
 
     public CommandCrystal() {
         getStyleClass().add("command-crystal");
         setMinSize(150, 150);
+        setFocusTraversable(true);
+        setAccessibleRole(AccessibleRole.BUTTON);
+        setAccessibleText("Центральный кристалл");
 
         glow.getStyleClass().add("command-crystal__glow");
         core.getStyleClass().add("command-crystal__core");
@@ -44,17 +55,44 @@ public final class CommandCrystal extends StackPane {
 
         titleLabel.getStyleClass().add("command-crystal__title");
         subtitleLabel.getStyleClass().add("command-crystal__subtitle");
-        VBox labels = new VBox(3, titleLabel, subtitleLabel);
+        titleLabel.setWrapText(true);
+        subtitleLabel.setWrapText(true);
+        titleLabel.setMaxWidth(190);
+        subtitleLabel.setMaxWidth(210);
+
+        VBox labels = new VBox(4, titleLabel, subtitleLabel);
         labels.setAlignment(Pos.CENTER);
         labels.setMouseTransparent(true);
-
         getChildren().addAll(artwork, labels);
         setAlignment(Pos.CENTER);
     }
 
+    public void setLevelText(String title, String breadcrumb, boolean canGoBack) {
+        titleLabel.setText(normalize(title, "Центр управления"));
+        subtitleLabel.setText(
+                canGoBack
+                        ? "Нажмите для возврата\n" + normalize(breadcrumb, "Категории")
+                        : normalize(breadcrumb, "Корень категорий")
+        );
+        setBackAvailable(canGoBack);
+    }
+
     public void setSelectionText(String title, String subtitle) {
-        titleLabel.setText(title == null || title.isBlank() ? "Центр управления" : title);
-        subtitleLabel.setText(subtitle == null || subtitle.isBlank() ? "Ядро системы" : subtitle);
+        titleLabel.setText(normalize(title, "Центр управления"));
+        subtitleLabel.setText(normalize(subtitle, "Ядро системы"));
+    }
+
+    public boolean isBackAvailable() {
+        return backAvailable;
+    }
+
+    public void setBackAvailable(boolean backAvailable) {
+        this.backAvailable = backAvailable;
+        pseudoClassStateChanged(BACK_AVAILABLE, backAvailable);
+        setCursor(backAvailable ? Cursor.HAND : Cursor.DEFAULT);
+        setAccessibleText(backAvailable
+                ? "Центральный кристалл. Вернуться на уровень выше"
+                : "Центральный кристалл");
     }
 
     @Override
@@ -68,6 +106,7 @@ public final class CommandCrystal extends StackPane {
         double coreRadius = size * 0.115;
 
         artwork.resizeRelocate(0, 0, width, height);
+
         glow.setCenterX(centerX);
         glow.setCenterY(centerY);
         glow.setRadius(size * 0.43);
@@ -109,12 +148,22 @@ public final class CommandCrystal extends StackPane {
         }
     }
 
-    private void setDiamond(Polygon polygon, double centerX, double centerY, double halfWidth, double halfHeight) {
+    private void setDiamond(
+            Polygon polygon,
+            double centerX,
+            double centerY,
+            double halfWidth,
+            double halfHeight
+    ) {
         polygon.getPoints().setAll(
                 centerX, centerY - halfHeight,
                 centerX + halfWidth, centerY,
                 centerX, centerY + halfHeight,
                 centerX - halfWidth, centerY
         );
+    }
+
+    private String normalize(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

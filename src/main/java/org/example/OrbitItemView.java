@@ -2,7 +2,9 @@ package org.example;
 
 import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
+import javafx.scene.AccessibleRole;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Region;
@@ -10,41 +12,86 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 /**
- * One static preview item around the command crystal.
+ * One interactive entry on the circular orbit.
  */
 public final class OrbitItemView extends StackPane {
 
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
+    private static final PseudoClass CATEGORY = PseudoClass.getPseudoClass("category");
+    private static final PseudoClass LEAF = PseudoClass.getPseudoClass("leaf");
 
-    private final String title;
-    private final String description;
+    private final OrbitEntry entry;
 
-    public OrbitItemView(String title, String icon, String description) {
-        this.title = title;
-        this.description = description;
+    public OrbitItemView(OrbitEntry entry) {
+        this.entry = entry == null
+                ? OrbitEntry.item("empty", "Без названия", "◇", "Нет описания")
+                : entry;
 
         getStyleClass().add("orbit-item");
+        pseudoClassStateChanged(CATEGORY, this.entry.isCategory());
+        pseudoClassStateChanged(LEAF, !this.entry.isCategory());
+
         setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         setPrefSize(112, 96);
         setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         setFocusTraversable(true);
+        setAccessibleRole(AccessibleRole.BUTTON);
+        setAccessibleText(this.entry.getTitle());
 
-        Label iconLabel = new Label(icon == null || icon.isBlank() ? "◇" : icon);
+        Label iconLabel = new Label(this.entry.getIcon());
         iconLabel.getStyleClass().add("orbit-item__icon");
 
-        Label titleLabel = new Label(title);
+        Label titleLabel = new Label(this.entry.getTitle());
         titleLabel.getStyleClass().add("orbit-item__title");
-        titleLabel.setMaxWidth(96);
+        titleLabel.setMaxWidth(100);
         titleLabel.setWrapText(false);
-        titleLabel.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        titleLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
 
-        VBox content = new VBox(5, iconLabel, titleLabel);
+        Label markerLabel = new Label(
+                this.entry.isCategory()
+                        ? (this.entry.hasChildren() ? "ОТКРЫТЬ" : "ПУСТО")
+                        : "ВЫБРАТЬ"
+        );
+        markerLabel.getStyleClass().add("orbit-item__marker");
+
+        VBox content = new VBox(4, iconLabel, titleLabel, markerLabel);
         content.setAlignment(Pos.CENTER);
         content.setMouseTransparent(true);
         getChildren().add(content);
 
-        Tooltip.install(this, new Tooltip(title + "\n" + description));
+        Tooltip.install(
+                this,
+                new Tooltip(this.entry.getTitle() + "\n" + this.entry.getDescription())
+        );
 
+        consumeSecondaryClicks();
+    }
+
+    /**
+     * Compatibility constructor for the old StaticOrbitPane. It can be removed
+     * together with StaticOrbitPane after the step-4 migration is committed.
+     */
+    public OrbitItemView(String title, String icon, String description) {
+        this(OrbitEntry.item(title, title, icon, description));
+    }
+
+    public OrbitEntry getEntry() {
+        return entry;
+    }
+
+    public String getTitle() {
+        return entry.getTitle();
+    }
+
+    public String getDescription() {
+        return entry.getDescription();
+    }
+
+    public void setSelected(boolean selected) {
+        pseudoClassStateChanged(SELECTED, selected);
+    }
+
+    private void consumeSecondaryClicks() {
         setOnMousePressed(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();
@@ -55,17 +102,5 @@ public final class OrbitItemView extends StackPane {
                 event.consume();
             }
         });
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setSelected(boolean selected) {
-        pseudoClassStateChanged(SELECTED, selected);
     }
 }
