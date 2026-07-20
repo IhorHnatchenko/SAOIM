@@ -1,97 +1,84 @@
 package org.example;
 
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.control.Label;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Pane;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+
+import java.net.URL;
 
 /**
- * Temporary profile screen used by step 1 to validate navigation.
- * The real profile card and circular menu will replace these placeholders later.
+ * Step 3 profile screen: profile card, command crystal and five static items.
  */
 public final class ProfileView extends Pane {
-    private static final double CARD_WIDTH = 285;
-    private static final double CARD_HEIGHT = 205;
 
-    private final Label usernameLabel = new Label("Guest");
-    private final VBox profileCard;
-    private final StackPane circlePlaceholder;
+    private static final double MIN_MARGIN = 18;
+    private static final double DEFAULT_MARGIN = 30;
+
+    private final ProfileCard profileCard = new ProfileCard();
+    private final StaticOrbitPane orbitPane = new StaticOrbitPane();
+    private UserProfile profile = UserProfile.starter("Guest");
 
     public ProfileView() {
+        getStyleClass().add("profile-view");
         setPickOnBounds(false);
 
-        Label sectionLabel = new Label("ПРОФИЛЬ");
-        sectionLabel.setStyle("-fx-text-fill: #7fcfff; -fx-font-size: 13px;");
+        URL stylesheet = ProfileView.class.getResource("profile-view.css");
+        if (stylesheet != null) {
+            getStylesheets().add(stylesheet.toExternalForm());
+        } else {
+            System.err.println("[Profile] Не найден stylesheet profile-view.css");
+        }
 
-        usernameLabel.setStyle("-fx-text-fill: #55d7ff; -fx-font-size: 22px; -fx-font-weight: bold;");
-
-        Label titleLabel = new Label("Энтузиаст");
-        titleLabel.setStyle("-fx-text-fill: #afc7e6; -fx-font-size: 14px;");
-
-        Label levelLabel = new Label("Уровень 1");
-        levelLabel.setStyle("-fx-text-fill: #8fe6ff; -fx-font-size: 14px;");
-
-        Label xpLabel = new Label("0 / 1000 XP");
-        xpLabel.setStyle("-fx-text-fill: #7fa6c8; -fx-font-size: 12px;");
-
-        profileCard = new VBox(10, sectionLabel, usernameLabel, titleLabel, levelLabel, xpLabel);
-        profileCard.setPadding(new Insets(20));
-        profileCard.setPrefSize(CARD_WIDTH, CARD_HEIGHT);
-        profileCard.setMinSize(CARD_WIDTH, CARD_HEIGHT);
-        profileCard.setMaxSize(CARD_WIDTH, CARD_HEIGHT);
-        profileCard.setStyle(
-                "-fx-background-color: rgba(3, 20, 39, 0.94);" +
-                "-fx-background-radius: 12;" +
-                "-fx-border-color: rgba(80, 205, 255, 0.85);" +
-                "-fx-border-width: 1.5;" +
-                "-fx-border-radius: 12;"
-        );
-
-        Label placeholderTitle = new Label("КОМАНДНЫЙ КРИСТАЛЛ");
-        placeholderTitle.setStyle("-fx-text-fill: #62d8ff; -fx-font-size: 24px; -fx-font-weight: bold;");
-
-        Label placeholderSubtitle = new Label("Навигация подключена. Орбитальное меню будет добавлено на следующем этапе.");
-        placeholderSubtitle.setWrapText(true);
-        placeholderSubtitle.setMaxWidth(420);
-        placeholderSubtitle.setAlignment(Pos.CENTER);
-        placeholderSubtitle.setStyle("-fx-text-fill: #9bb8d3; -fx-font-size: 14px;");
-
-        VBox centerText = new VBox(12, placeholderTitle, placeholderSubtitle);
-        centerText.setAlignment(Pos.CENTER);
-
-        circlePlaceholder = new StackPane(centerText);
-        circlePlaceholder.setStyle(
-                "-fx-background-color: rgba(2, 17, 35, 0.83);" +
-                "-fx-background-radius: 1000;" +
-                "-fx-border-color: rgba(44, 173, 255, 0.82);" +
-                "-fx-border-width: 2;" +
-                "-fx-border-radius: 1000;"
-        );
+        getChildren().addAll(profileCard, orbitPane);
+        profileCard.setProfile(profile);
 
         consumeSecondaryClicks(profileCard);
-        consumeSecondaryClicks(circlePlaceholder);
-
-        getChildren().addAll(profileCard, circlePlaceholder);
     }
 
     public void setUsername(String username) {
-        usernameLabel.setText(username == null || username.isBlank() ? "Guest" : username);
+        setProfile(profile.withNickname(username));
+    }
+
+    public void setProfile(UserProfile profile) {
+        this.profile = profile == null ? UserProfile.starter("Guest") : profile;
+        profileCard.setProfile(this.profile);
+    }
+
+    public UserProfile getProfile() {
+        return profile;
     }
 
     @Override
     protected void layoutChildren() {
         double width = getWidth();
         double height = getHeight();
+        if (width <= 0 || height <= 0) {
+            return;
+        }
 
-        profileCard.resizeRelocate(30, 30, CARD_WIDTH, CARD_HEIGHT);
+        double viewportScale = clamp(Math.min(width / 1920.0, height / 1080.0), 0.78, 1.10);
+        profileCard.applyViewportScale(viewportScale);
 
-        double diameter = Math.max(360, Math.min(width * 0.58, height * 0.72));
-        double circleX = Math.max(350, (width - diameter) / 2.0);
-        double circleY = (height - diameter) / 2.0;
-        circlePlaceholder.resizeRelocate(circleX, circleY, diameter, diameter);
+        double margin = clamp(Math.min(width, height) * 0.028, MIN_MARGIN, DEFAULT_MARGIN);
+        double cardWidth = profileCard.getScaledDesignWidth();
+        double cardHeight = profileCard.getScaledDesignHeight();
+
+        // Because scaling is performed around the node center, compensate so the
+        // visual card remains anchored to the upper-left margin.
+        double scaleXCompensation = (cardWidth - profileCard.getPrefWidth()) / 2.0;
+        double scaleYCompensation = (cardHeight - profileCard.getPrefHeight()) / 2.0;
+        profileCard.resizeRelocate(
+                margin + scaleXCompensation,
+                margin + scaleYCompensation,
+                profileCard.getPrefWidth(),
+                profileCard.getPrefHeight()
+        );
+
+        double orbitLeft = Math.max(margin, margin + cardWidth * 0.82);
+        double orbitTop = margin * 0.35;
+        double orbitWidth = Math.max(320, width - orbitLeft - margin);
+        double orbitHeight = Math.max(320, height - orbitTop - margin * 0.35);
+
+        orbitPane.resizeRelocate(orbitLeft, orbitTop, orbitWidth, orbitHeight);
     }
 
     private void consumeSecondaryClicks(javafx.scene.Node node) {
@@ -105,5 +92,9 @@ public final class ProfileView extends Pane {
                 event.consume();
             }
         });
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

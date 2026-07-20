@@ -86,7 +86,8 @@ public class SAOMenu {
         profileView.prefHeightProperty().bind(rootPane.heightProperty());
 
         rootPane.setOnMouseReleased(event -> {
-            if (event.getButton() == MouseButton.SECONDARY && event.getTarget() == rootPane) {
+            boolean emptyOverlayArea = event.getTarget() == rootPane || event.getTarget() == profileView;
+            if (event.getButton() == MouseButton.SECONDARY && emptyOverlayArea) {
                 event.consume();
                 hideMenu();
             }
