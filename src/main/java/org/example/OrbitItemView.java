@@ -11,14 +11,12 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-/**
- * One interactive entry on the circular orbit.
- */
+/** One interactive entry on the circular orbit. */
 public final class OrbitItemView extends StackPane {
-
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
     private static final PseudoClass CATEGORY = PseudoClass.getPseudoClass("category");
     private static final PseudoClass LEAF = PseudoClass.getPseudoClass("leaf");
+    private static final PseudoClass PINNED = PseudoClass.getPseudoClass("pinned");
 
     private final OrbitEntry entry;
 
@@ -30,6 +28,7 @@ public final class OrbitItemView extends StackPane {
         getStyleClass().add("orbit-item");
         pseudoClassStateChanged(CATEGORY, this.entry.isCategory());
         pseudoClassStateChanged(LEAF, !this.entry.isCategory());
+        pseudoClassStateChanged(PINNED, this.entry.isRootPinned());
 
         setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         setPrefSize(112, 96);
@@ -47,11 +46,15 @@ public final class OrbitItemView extends StackPane {
         titleLabel.setWrapText(false);
         titleLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
 
-        Label markerLabel = new Label(
-                this.entry.isCategory()
-                        ? (this.entry.hasChildren() ? "ОТКРЫТЬ" : "ПУСТО")
-                        : "ВЫБРАТЬ"
-        );
+        String marker;
+        if (this.entry.isRootPinned()) {
+            marker = "★ ЗАКРЕПЛЕНА";
+        } else if (this.entry.isCategory()) {
+            marker = "ДВОЙНОЙ КЛИК";
+        } else {
+            marker = "ВЫБРАТЬ";
+        }
+        Label markerLabel = new Label(marker);
         markerLabel.getStyleClass().add("orbit-item__marker");
 
         VBox content = new VBox(4, iconLabel, titleLabel, markerLabel);
@@ -61,16 +64,19 @@ public final class OrbitItemView extends StackPane {
 
         Tooltip.install(
                 this,
-                new Tooltip(this.entry.getTitle() + "\n" + this.entry.getDescription())
+                new Tooltip(
+                        this.entry.getTitle()
+                                + "\n"
+                                + this.entry.getDescription()
+                                + (this.entry.isCategory()
+                                ? "\nДвойной клик или Enter — открыть"
+                                : "")
+                )
         );
-
         consumeSecondaryClicks();
     }
 
-    /**
-     * Compatibility constructor for the old StaticOrbitPane. It can be removed
-     * together with StaticOrbitPane after the step-4 migration is committed.
-     */
+    /** Compatibility constructor for old StaticOrbitPane. */
     public OrbitItemView(String title, String icon, String description) {
         this(OrbitEntry.item(title, title, icon, description));
     }

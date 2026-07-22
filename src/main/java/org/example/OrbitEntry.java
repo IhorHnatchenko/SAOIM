@@ -4,26 +4,46 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Immutable data displayed by CircularMenuPane.
- *
- * Step 4 uses in-memory demo entries. The same UI contract can later be filled
- * by AppCategory/AppShortcut data loaded from repositories.
- */
+/** Immutable data displayed by CircularMenuPane. */
 public final class OrbitEntry {
-
     public enum Kind {
         CATEGORY,
         ITEM
     }
 
     private final String id;
+    private final Long categoryId;
     private final String title;
     private final String icon;
     private final String description;
     private final Kind kind;
+    private final boolean rootPinned;
+    private final int sortOrder;
     private final List<OrbitEntry> children;
 
+    public OrbitEntry(
+            String id,
+            Long categoryId,
+            String title,
+            String icon,
+            String description,
+            Kind kind,
+            boolean rootPinned,
+            int sortOrder,
+            List<OrbitEntry> children
+    ) {
+        this.id = normalize(id, "entry");
+        this.categoryId = categoryId;
+        this.title = normalize(title, "Без названия");
+        this.icon = normalize(icon, "◇");
+        this.description = normalize(description, "Нет описания");
+        this.kind = Objects.requireNonNull(kind, "kind");
+        this.rootPinned = rootPinned;
+        this.sortOrder = Math.max(0, sortOrder);
+        this.children = children == null ? List.of() : List.copyOf(children);
+    }
+
+    /** Compatibility constructor used by older step-4 code. */
     public OrbitEntry(
             String id,
             String title,
@@ -32,12 +52,29 @@ public final class OrbitEntry {
             Kind kind,
             List<OrbitEntry> children
     ) {
-        this.id = normalize(id, "entry");
-        this.title = normalize(title, "Без названия");
-        this.icon = normalize(icon, "◇");
-        this.description = normalize(description, "Нет описания");
-        this.kind = Objects.requireNonNull(kind, "kind");
-        this.children = children == null ? List.of() : List.copyOf(children);
+        this(id, null, title, icon, description, kind, false, 0, children);
+    }
+
+    public static OrbitEntry category(
+            long categoryId,
+            String title,
+            String icon,
+            String description,
+            boolean rootPinned,
+            int sortOrder,
+            List<OrbitEntry> children
+    ) {
+        return new OrbitEntry(
+                "category:" + categoryId,
+                categoryId,
+                title,
+                icon,
+                description,
+                Kind.CATEGORY,
+                rootPinned,
+                sortOrder,
+                children
+        );
     }
 
     public static OrbitEntry category(
@@ -49,10 +86,13 @@ public final class OrbitEntry {
     ) {
         return new OrbitEntry(
                 id,
+                null,
                 title,
                 icon,
                 description,
                 Kind.CATEGORY,
+                false,
+                0,
                 children == null ? List.of() : Arrays.asList(children)
         );
     }
@@ -63,11 +103,25 @@ public final class OrbitEntry {
             String icon,
             String description
     ) {
-        return new OrbitEntry(id, title, icon, description, Kind.ITEM, List.of());
+        return new OrbitEntry(
+                id,
+                null,
+                title,
+                icon,
+                description,
+                Kind.ITEM,
+                false,
+                0,
+                List.of()
+        );
     }
 
     public String getId() {
         return id;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
     }
 
     public String getTitle() {
@@ -86,6 +140,14 @@ public final class OrbitEntry {
         return kind;
     }
 
+    public boolean isRootPinned() {
+        return rootPinned;
+    }
+
+    public int getSortOrder() {
+        return sortOrder;
+    }
+
     public List<OrbitEntry> getChildren() {
         return children;
     }
@@ -96,6 +158,10 @@ public final class OrbitEntry {
 
     public boolean hasChildren() {
         return !children.isEmpty();
+    }
+
+    public boolean isDatabaseCategory() {
+        return isCategory() && categoryId != null && categoryId > 0;
     }
 
     private static String normalize(String value, String fallback) {

@@ -1,0 +1,150 @@
+/* Step 6: category tree controls and in-scene dialogs. */
+
+.orbit-toolbar {
+    -fx-background-color: rgba(2, 18, 39, 0.90);
+    -fx-background-radius: 14;
+    -fx-border-color: rgba(71, 198, 255, 0.55);
+    -fx-border-radius: 14;
+    -fx-border-width: 1;
+    -fx-padding: 7 10 7 10;
+    -fx-effect: dropshadow(gaussian, rgba(26, 145, 233, 0.38), 14, 0.20, 0, 0);
+}
+
+.orbit-tool-button {
+    -fx-min-width: 42;
+    -fx-min-height: 32;
+    -fx-background-color: rgba(5, 40, 82, 0.94);
+    -fx-background-radius: 9;
+    -fx-border-color: rgba(75, 204, 255, 0.68);
+    -fx-border-radius: 9;
+    -fx-border-width: 1;
+    -fx-text-fill: #b9f4ff;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 9 4 9;
+}
+
+.orbit-tool-button:hover,
+.orbit-tool-button:focused {
+    -fx-background-color: rgba(12, 87, 148, 0.98);
+    -fx-border-color: white;
+    -fx-effect: dropshadow(gaussian, rgba(55, 204, 255, 0.66), 11, 0.25, 0, 0);
+}
+
+.orbit-tool-button:disabled {
+    -fx-opacity: 0.28;
+}
+
+.orbit-status {
+    -fx-text-fill: rgba(167, 228, 255, 0.94);
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-alignment: center;
+    -fx-alignment: center;
+    -fx-background-color: rgba(2, 17, 36, 0.82);
+    -fx-background-radius: 8;
+    -fx-padding: 3 9 3 9;
+}
+
+.orbit-item:pinned {
+    -fx-border-color: rgba(255, 218, 91, 0.94);
+    -fx-effect: dropshadow(gaussian, rgba(255, 197, 43, 0.62), 18, 0.27, 0, 0);
+}
+
+.orbit-item:pinned .orbit-item__marker {
+    -fx-text-fill: rgba(255, 226, 119, 0.94);
+}
+
+.category-dialog-layer {
+    -fx-alignment: center;
+}
+
+.category-dialog-dimmer {
+    -fx-background-color: rgba(0, 7, 19, 0.72);
+}
+
+.category-dialog-card {
+    -fx-background-color: linear-gradient(to bottom, rgba(5, 31, 62, 0.99), rgba(2, 17, 39, 0.99));
+    -fx-background-radius: 16;
+    -fx-border-color: rgba(83, 211, 255, 0.92);
+    -fx-border-width: 1.4;
+    -fx-border-radius: 16;
+    -fx-effect: dropshadow(gaussian, rgba(36, 167, 255, 0.62), 26, 0.25, 0, 0);
+}
+
+.category-dialog-title {
+    -fx-text-fill: #eafaff;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.category-dialog-subtitle,
+.category-dialog-field-label,
+.category-dialog-check {
+    -fx-text-fill: rgba(161, 218, 249, 0.88);
+    -fx-font-size: 12px;
+}
+
+.category-dialog-field-label {
+    -fx-font-weight: bold;
+}
+
+.category-dialog-input,
+.category-dialog-combo {
+    -fx-background-color: rgba(1, 16, 36, 0.94);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(68, 179, 238, 0.70);
+    -fx-border-radius: 8;
+    -fx-text-fill: #edfaff;
+    -fx-prompt-text-fill: rgba(132, 181, 216, 0.55);
+    -fx-padding: 8 10 8 10;
+}
+
+.category-dialog-combo .list-cell {
+    -fx-background-color: rgba(3, 24, 50, 0.98);
+    -fx-text-fill: #e5f8ff;
+}
+
+.category-dialog-button {
+    -fx-background-color: rgba(8, 75, 128, 0.96);
+    -fx-background-radius: 9;
+    -fx-border-color: rgba(101, 219, 255, 0.86);
+    -fx-border-radius: 9;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 8 16 8 16;
+}
+
+.category-dialog-button:hover,
+.category-dialog-button:focused {
+    -fx-background-color: rgba(18, 119, 184, 0.99);
+    -fx-border-color: white;
+}
+
+.category-dialog-button--danger {
+    -fx-background-color: rgba(132, 30, 57, 0.96);
+    -fx-border-color: rgba(255, 113, 145, 0.92);
+}
+
+.category-dialog-button--danger:hover,
+.category-dialog-button--danger:focused {
+    -fx-background-color: rgba(179, 37, 72, 0.99);
+}
+
+.category-dialog-validation,
+.category-dialog-error {
+    -fx-text-fill: #ff91a9;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.category-dialog-warning {
+    -fx-text-fill: rgba(255, 211, 150, 0.96);
+    -fx-font-size: 13px;
+}
+
+.category-dialog-busy {
+    -fx-text-fill: #9deaff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}

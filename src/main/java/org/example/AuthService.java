@@ -23,35 +23,24 @@ public final class AuthService {
         return authenticate(username, password).isPresent();
     }
 
-    /**
-     * Authenticates the user and returns an account-aware session.
-     * The password query remains synchronous because AuthWindow currently owns
-     * the login interaction. Profile data is deliberately loaded later in a
-     * background Task.
-     */
     public static Optional<UserSession> authenticate(String username, String password) {
         LAST_AUTHENTICATED_SESSION.set(null);
-
-        String query = "SELECT a.id, a.username, a.password_hash, p.sao_id " +
-                "FROM accounts a " +
-                "LEFT JOIN profiles p ON p.account_id = a.id " +
-                "WHERE a.username = ? " +
-                "LIMIT 1";
+        String query = "SELECT a.id, a.username, a.password_hash, p.sao_id "
+                + "FROM accounts a "
+                + "LEFT JOIN profiles p ON p.account_id = a.id "
+                + "WHERE a.username = ? LIMIT 1";
 
         try (Connection connection = DatabaseManager.getConnection();
              PreparedStatement statement = connection.prepareStatement(query)) {
             statement.setString(1, username);
-
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     return Optional.empty();
                 }
-
                 String storedHash = resultSet.getString("password_hash");
                 if (!BCrypt.checkpw(password, storedHash)) {
                     return Optional.empty();
                 }
-
                 UserSession session = new UserSession(
                         resultSet.getLong("id"),
                         resultSet.getString("username"),
@@ -83,16 +72,14 @@ public final class AuthService {
     ) throws RegistrationException {
         String insertAccountSql =
                 "INSERT INTO accounts(username, email, password_hash) VALUES(?, ?, ?)";
-        String insertProfileSql =
-                "INSERT INTO profiles(" +
-                        "account_id, sao_id, country, city, nickname, title, level, current_xp, required_xp" +
-                        ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String insertProfileSql = "INSERT INTO profiles("
+                + "account_id, sao_id, country, city, nickname, title, level, current_xp, required_xp"
+                + ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         Connection connection = null;
         try {
             connection = DatabaseManager.getConnection();
             connection.setAutoCommit(false);
-
             String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
             int accountId = -1;
 
@@ -104,7 +91,6 @@ public final class AuthService {
                 statement.setString(2, email);
                 statement.setString(3, hashedPassword);
                 statement.executeUpdate();
-
                 try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
                     if (generatedKeys.next()) {
                         accountId = generatedKeys.getInt(1);
@@ -130,12 +116,12 @@ public final class AuthService {
                 statement.executeUpdate();
             }
 
+            new CategoryRepository().createDefaultCategories(connection, accountId);
             connection.commit();
             System.out.println("[Auth] Пользователь зарегистрирован в MySQL. SAO ID: " + saoId);
             return true;
         } catch (SQLException exception) {
             rollbackQuietly(connection);
-
             if (exception.getErrorCode() == 1062) {
                 String errorMessage = exception.getMessage().toLowerCase();
                 if (errorMessage.contains("email")) {
@@ -145,7 +131,6 @@ public final class AuthService {
                     throw new RegistrationException("USERNAME TAKEN!");
                 }
             }
-
             System.err.println("[Auth] Ошибка транзакции MySQL: " + exception.getMessage());
             throw new RegistrationException("SYNC FAILED!");
         } finally {
