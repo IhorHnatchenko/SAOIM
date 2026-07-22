@@ -12,9 +12,10 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Polygon;
+import javafx.scene.text.TextAlignment;
 
 /**
- * Central command crystal. In step 4 it also acts as the Back button.
+ * Central command crystal. It also acts as the Back button for orbit navigation.
  */
 public final class CommandCrystal extends StackPane {
 
@@ -22,6 +23,9 @@ public final class CommandCrystal extends StackPane {
             PseudoClass.getPseudoClass("back-available");
 
     private final Pane artwork = new Pane();
+    private final StackPane textLayer = new StackPane();
+    private final VBox labels = new VBox(5);
+
     private final Circle glow = new Circle();
     private final Circle core = new Circle();
     private final Polygon outerHex = new Polygon();
@@ -44,26 +48,31 @@ public final class CommandCrystal extends StackPane {
         outerHex.getStyleClass().add("command-crystal__outer");
         innerDiamond.getStyleClass().add("command-crystal__inner");
 
+        artwork.setMouseTransparent(true);
         artwork.getChildren().addAll(glow, core, outerHex, innerDiamond);
         for (int i = 0; i < spokes.length; i++) {
             Line spoke = new Line();
             spoke.setStroke(Color.rgb(77, 213, 255, 0.48));
             spoke.setStrokeWidth(1.1);
+            spoke.setMouseTransparent(true);
             spokes[i] = spoke;
             artwork.getChildren().add(spoke);
         }
 
-        titleLabel.getStyleClass().add("command-crystal__title");
-        subtitleLabel.getStyleClass().add("command-crystal__subtitle");
-        titleLabel.setWrapText(true);
-        subtitleLabel.setWrapText(true);
-        titleLabel.setMaxWidth(190);
-        subtitleLabel.setMaxWidth(210);
+        configureCenteredLabel(titleLabel, "command-crystal__title");
+        configureCenteredLabel(subtitleLabel, "command-crystal__subtitle");
 
-        VBox labels = new VBox(4, titleLabel, subtitleLabel);
+        labels.getChildren().addAll(titleLabel, subtitleLabel);
         labels.setAlignment(Pos.CENTER);
+        labels.setFillWidth(true);
         labels.setMouseTransparent(true);
-        getChildren().addAll(artwork, labels);
+
+        textLayer.getStyleClass().add("command-crystal__text-layer");
+        textLayer.setAlignment(Pos.CENTER);
+        textLayer.setMouseTransparent(true);
+        textLayer.getChildren().add(labels);
+
+        getChildren().addAll(artwork, textLayer);
         setAlignment(Pos.CENTER);
     }
 
@@ -97,6 +106,8 @@ public final class CommandCrystal extends StackPane {
 
     @Override
     protected void layoutChildren() {
+        super.layoutChildren();
+
         double width = getWidth();
         double height = getHeight();
         double size = Math.max(1, Math.min(width, height));
@@ -127,7 +138,28 @@ public final class CommandCrystal extends StackPane {
             spoke.setEndY(centerY + Math.sin(angle) * outerRadius);
         }
 
-        super.layoutChildren();
+        // The text layer is explicitly positioned relative to this crystal,
+        // not relative to the monitor or parent ProfileView.
+        double textWidth = size * 0.62;
+        double textHeight = size * 0.44;
+        textLayer.resizeRelocate(
+                centerX - textWidth / 2.0,
+                centerY - textHeight / 2.0,
+                textWidth,
+                textHeight
+        );
+        labels.setPrefWidth(textWidth);
+        labels.setMaxWidth(textWidth);
+        titleLabel.setMaxWidth(textWidth);
+        subtitleLabel.setMaxWidth(textWidth);
+    }
+
+    private void configureCenteredLabel(Label label, String styleClass) {
+        label.getStyleClass().add(styleClass);
+        label.setWrapText(true);
+        label.setAlignment(Pos.CENTER);
+        label.setTextAlignment(TextAlignment.CENTER);
+        label.setMaxWidth(Double.MAX_VALUE);
     }
 
     private void setRegularPolygon(

@@ -1,6 +1,7 @@
 package org.example;
 
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
@@ -20,12 +21,23 @@ import java.util.List;
  */
 public final class CircularMenuPane extends Pane {
 
-    public static final int PAGE_SIZE = 5;
+    /** Maximum number of primary entries displayed on one orbit page. */
+    public static final int PAGE_SIZE = 8;
 
-    private final Circle outerRing = createRing(0.62, 1.4);
-    private final Circle middleRing = createRing(0.48, 1.0);
-    private final Circle innerRing = createRing(0.34, 0.8);
+    private static final int TICK_COUNT = 32;
+
+    private final Circle orbitBackdrop = createCircle("orbit-backdrop");
+    private final Circle outerGlowRing = createRing("orbit-ring--outer-glow");
+    private final Circle outerRing = createRing("orbit-ring--outer");
+    private final Circle middleRing = createRing("orbit-ring--middle");
+    private final Circle innerRing = createRing("orbit-ring--inner");
+    private final Circle coreRing = createRing("orbit-ring--core");
+
+    private final Line[] tickLines = new Line[TICK_COUNT];
+    private final Line[] connectorGlowLines = new Line[PAGE_SIZE];
     private final Line[] connectorLines = new Line[PAGE_SIZE];
+    private final Circle[] anchorNodes = new Circle[PAGE_SIZE];
+
     private final CommandCrystal commandCrystal = new CommandCrystal();
     private final Button previousPageButton = createPageButton("‹", "Предыдущая страница");
     private final Button nextPageButton = createPageButton("›", "Следующая страница");
@@ -48,16 +60,17 @@ public final class CircularMenuPane extends Pane {
         breadcrumbLabel.setAlignment(Pos.CENTER);
         breadcrumbLabel.setMouseTransparent(true);
 
-        getChildren().addAll(outerRing, middleRing, innerRing);
+        getChildren().addAll(
+                orbitBackdrop,
+                outerGlowRing,
+                outerRing,
+                middleRing,
+                innerRing,
+                coreRing
+        );
 
-        for (int i = 0; i < connectorLines.length; i++) {
-            Line line = new Line();
-            line.setStroke(Color.rgb(72, 196, 255, 0.28));
-            line.setStrokeWidth(1.0);
-            line.setMouseTransparent(true);
-            connectorLines[i] = line;
-            getChildren().add(line);
-        }
+        createTicks();
+        createConnectors();
 
         getChildren().addAll(
                 commandCrystal,
@@ -125,6 +138,40 @@ public final class CircularMenuPane extends Pane {
 
     public OrbitNavigationStack getNavigation() {
         return navigation;
+    }
+
+    private void createTicks() {
+        for (int i = 0; i < tickLines.length; i++) {
+            Line tick = new Line();
+            tick.getStyleClass().add("orbit-tick");
+            if (i % 4 == 0) {
+                tick.getStyleClass().add("orbit-tick--major");
+            }
+            tick.setMouseTransparent(true);
+            tickLines[i] = tick;
+            getChildren().add(tick);
+        }
+    }
+
+    private void createConnectors() {
+        for (int i = 0; i < PAGE_SIZE; i++) {
+            Line glowLine = new Line();
+            glowLine.getStyleClass().add("orbit-connector-glow");
+            glowLine.setMouseTransparent(true);
+            connectorGlowLines[i] = glowLine;
+            getChildren().add(glowLine);
+
+            Line line = new Line();
+            line.getStyleClass().add("orbit-connector");
+            line.setMouseTransparent(true);
+            connectorLines[i] = line;
+            getChildren().add(line);
+
+            Circle anchor = createCircle("orbit-anchor");
+            anchor.setMouseTransparent(true);
+            anchorNodes[i] = anchor;
+            getChildren().add(anchor);
+        }
     }
 
     private void activate(OrbitItemView item) {
@@ -271,14 +318,19 @@ public final class CircularMenuPane extends Pane {
         double size = Math.max(320, Math.min(width, height));
         double centerX = width / 2.0;
         double centerY = height / 2.0;
-        double radius = clamp(size * 0.36, 145, size * 0.41);
-        double itemWidth = clamp(size * 0.15, 84, 124);
-        double itemHeight = clamp(size * 0.13, 74, 106);
-        double crystalSize = clamp(size * 0.42, 190, 360);
 
-        layoutRing(outerRing, centerX, centerY, size * 0.46);
-        layoutRing(middleRing, centerX, centerY, size * 0.365);
-        layoutRing(innerRing, centerX, centerY, size * 0.255);
+        double radius = clamp(size * 0.375, 150, size * 0.415);
+        double itemWidth = clamp(size * 0.128, 80, 116);
+        double itemHeight = clamp(size * 0.108, 70, 94);
+        double crystalSize = clamp(size * 0.40, 190, 350);
+
+        layoutCircle(orbitBackdrop, centerX, centerY, size * 0.475);
+        layoutCircle(outerGlowRing, centerX, centerY, size * 0.455);
+        layoutCircle(outerRing, centerX, centerY, size * 0.442);
+        layoutCircle(middleRing, centerX, centerY, size * 0.355);
+        layoutCircle(innerRing, centerX, centerY, size * 0.270);
+        layoutCircle(coreRing, centerX, centerY, size * 0.185);
+        layoutTicks(centerX, centerY, size * 0.420, size * 0.452);
 
         commandCrystal.resizeRelocate(
                 centerX - crystalSize / 2.0,
@@ -291,9 +343,7 @@ public final class CircularMenuPane extends Pane {
         double angleStep = itemCount == 0 ? 0 : 360.0 / itemCount;
         double startAngle = -90.0;
 
-        for (int i = 0; i < connectorLines.length; i++) {
-            connectorLines[i].setVisible(i < itemCount);
-        }
+        updateConnectorVisibility(itemCount);
 
         for (int i = 0; i < itemCount; i++) {
             double angle = Math.toRadians(startAngle + i * angleStep);
@@ -313,25 +363,84 @@ public final class CircularMenuPane extends Pane {
                     itemHeight
             );
 
-            Line line = connectorLines[i];
-            double lineStartRadius = crystalSize * 0.32;
-            double lineEndRadius = radius - Math.min(itemWidth, itemHeight) * 0.46;
-            line.setStartX(centerX + directionX * lineStartRadius);
-            line.setStartY(centerY + directionY * lineStartRadius);
-            line.setEndX(centerX + directionX * lineEndRadius);
-            line.setEndY(centerY + directionY * lineEndRadius);
+            double lineStartRadius = crystalSize * 0.325;
+            double lineEndRadius = radius - Math.min(itemWidth, itemHeight) * 0.52;
+            double startX = centerX + directionX * lineStartRadius;
+            double startY = centerY + directionY * lineStartRadius;
+            double endX = centerX + directionX * lineEndRadius;
+            double endY = centerY + directionY * lineEndRadius;
+
+            layoutLine(connectorGlowLines[i], startX, startY, endX, endY);
+            layoutLine(connectorLines[i], startX, startY, endX, endY);
+
+            Circle anchor = anchorNodes[i];
+            anchor.setCenterX(endX);
+            anchor.setCenterY(endY);
+            anchor.setRadius(clamp(size * 0.006, 3.2, 5.2));
         }
 
-        double pageButtonSize = clamp(size * 0.07, 38, 54);
+        layoutPagingControls(centerX, centerY, radius, itemHeight, size);
+
+        breadcrumbLabel.resizeRelocate(
+                Math.max(0, centerX - crystalSize * 1.0),
+                Math.max(0, centerY - radius - itemHeight * 0.95),
+                crystalSize * 2.0,
+                30
+        );
+    }
+
+    private void layoutTicks(
+            double centerX,
+            double centerY,
+            double innerRadius,
+            double outerRadius
+    ) {
+        for (int i = 0; i < tickLines.length; i++) {
+            double angle = Math.toRadians(-90.0 + i * (360.0 / tickLines.length));
+            boolean major = i % 4 == 0;
+            double tickInnerRadius = major ? innerRadius - 4.0 : innerRadius;
+            double tickOuterRadius = major ? outerRadius + 3.0 : outerRadius;
+
+            Line tick = tickLines[i];
+            tick.setStartX(centerX + Math.cos(angle) * tickInnerRadius);
+            tick.setStartY(centerY + Math.sin(angle) * tickInnerRadius);
+            tick.setEndX(centerX + Math.cos(angle) * tickOuterRadius);
+            tick.setEndY(centerY + Math.sin(angle) * tickOuterRadius);
+        }
+    }
+
+    private void updateConnectorVisibility(int itemCount) {
+        for (int i = 0; i < PAGE_SIZE; i++) {
+            boolean visible = i < itemCount;
+            connectorGlowLines[i].setVisible(visible);
+            connectorLines[i].setVisible(visible);
+            anchorNodes[i].setVisible(visible);
+        }
+    }
+
+    private void layoutPagingControls(
+            double centerX,
+            double centerY,
+            double radius,
+            double itemHeight,
+            double size
+    ) {
+        double pageButtonSize = clamp(size * 0.062, 38, 50);
+        double controlsY = centerY + radius + itemHeight * 0.62;
+
+        pageIndicator.autosize();
+        double indicatorWidth = Math.max(58, pageIndicator.getWidth());
+        double gap = 12;
+
         previousPageButton.resizeRelocate(
-                centerX - radius - pageButtonSize * 1.55,
-                centerY - pageButtonSize / 2.0,
+                centerX - indicatorWidth / 2.0 - gap - pageButtonSize,
+                controlsY,
                 pageButtonSize,
                 pageButtonSize
         );
         nextPageButton.resizeRelocate(
-                centerX + radius + pageButtonSize * 0.55,
-                centerY - pageButtonSize / 2.0,
+                centerX + indicatorWidth / 2.0 + gap,
+                controlsY,
                 pageButtonSize,
                 pageButtonSize
         );
@@ -339,14 +448,7 @@ public final class CircularMenuPane extends Pane {
         pageIndicator.autosize();
         pageIndicator.relocate(
                 centerX - pageIndicator.getWidth() / 2.0,
-                centerY + radius + itemHeight * 0.72
-        );
-
-        breadcrumbLabel.resizeRelocate(
-                Math.max(0, centerX - crystalSize * 0.9),
-                Math.max(0, centerY - radius - itemHeight * 0.95),
-                crystalSize * 1.8,
-                28
+                controlsY + pageButtonSize / 2.0 - pageIndicator.getHeight() / 2.0
         );
     }
 
@@ -359,22 +461,33 @@ public final class CircularMenuPane extends Pane {
         return button;
     }
 
-    private Circle createRing(double opacity, double width) {
-        Circle ring = new Circle();
-        ring.setFill(Color.TRANSPARENT);
-        ring.setStroke(Color.rgb(48, 167, 255, opacity));
-        ring.setStrokeWidth(width);
-        ring.setMouseTransparent(true);
+    private Circle createRing(String modifierStyleClass) {
+        Circle ring = createCircle("orbit-ring");
+        ring.getStyleClass().add(modifierStyleClass);
         return ring;
     }
 
-    private void layoutRing(Circle ring, double centerX, double centerY, double radius) {
-        ring.setCenterX(centerX);
-        ring.setCenterY(centerY);
-        ring.setRadius(radius);
+    private Circle createCircle(String styleClass) {
+        Circle circle = new Circle();
+        circle.getStyleClass().add(styleClass);
+        circle.setMouseTransparent(true);
+        return circle;
     }
 
-    private void consumeSecondaryClicks(javafx.scene.Node node) {
+    private void layoutCircle(Circle circle, double centerX, double centerY, double radius) {
+        circle.setCenterX(centerX);
+        circle.setCenterY(centerY);
+        circle.setRadius(radius);
+    }
+
+    private void layoutLine(Line line, double startX, double startY, double endX, double endY) {
+        line.setStartX(startX);
+        line.setStartY(startY);
+        line.setEndX(endX);
+        line.setEndY(endY);
+    }
+
+    private void consumeSecondaryClicks(Node node) {
         node.setOnMousePressed(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();

@@ -113,6 +113,30 @@ public final class DemoOrbitData {
                         "▱",
                         "Редко используемые ресурсы",
                         OrbitEntry.item("archive-old", "Старые проекты", "▱", "Архив проектов")
+                ),
+                OrbitEntry.category(
+                        "creativity",
+                        "Творчество",
+                        "✦",
+                        "Графика, музыка и творческие инструменты",
+                        OrbitEntry.item("creativity-design", "Дизайн", "◇", "Графические редакторы"),
+                        OrbitEntry.item("creativity-audio", "Аудио", "♫", "Работа со звуком")
+                ),
+                OrbitEntry.category(
+                        "travel",
+                        "Путешествия",
+                        "⌖",
+                        "Карты, маршруты и поездки",
+                        OrbitEntry.item("travel-maps", "Карты", "⌖", "Карты и навигация"),
+                        OrbitEntry.item("travel-plans", "Маршруты", "↗", "Планирование поездок")
+                ),
+                OrbitEntry.category(
+                        "utilities",
+                        "Инструменты",
+                        "⚙",
+                        "Небольшие полезные программы",
+                        OrbitEntry.item("utilities-terminal", "Терминал", ">_", "Командная строка"),
+                        OrbitEntry.item("utilities-calc", "Калькулятор", "=", "Системный калькулятор")
                 )
         );
     }
