@@ -1,48 +1,111 @@
 package org.example;
 
 import org.mindrot.jbcrypt.BCrypt;
-import java.sql.*;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
-public class AuthService {
+public final class AuthService {
+    private static final AtomicReference<UserSession> LAST_AUTHENTICATED_SESSION =
+            new AtomicReference<>();
 
-    public static boolean loginUser(String username, String password) {
-        String query = "SELECT password_hash FROM accounts WHERE username = ?;";
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-
-            pstmt.setString(1, username);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    String storedHash = rs.getString("password_hash");
-                    return BCrypt.checkpw(password, storedHash);
-                }
-            }
-        } catch (SQLException e) {
-            System.err.println("[Auth] Ошибка авторизации в MySQL: " + e.getMessage());
-        }
-        return false;
+    private AuthService() {
     }
 
-    public static boolean registerUser(String username, String email, String password, String country, String city) throws RegistrationException {
-        String insertAccountSQL = "INSERT INTO accounts(username, email, password_hash) VALUES(?, ?, ?);";
-        String insertProfileSQL = "INSERT INTO profiles(account_id, sao_id, country, city) VALUES(?, ?, ?, ?);";
+    /** Compatibility method used by the current AuthWindow. */
+    public static boolean loginUser(String username, String password) {
+        return authenticate(username, password).isPresent();
+    }
 
-        Connection conn = null;
+    /**
+     * Authenticates the user and returns an account-aware session.
+     * The password query remains synchronous because AuthWindow currently owns
+     * the login interaction. Profile data is deliberately loaded later in a
+     * background Task.
+     */
+    public static Optional<UserSession> authenticate(String username, String password) {
+        LAST_AUTHENTICATED_SESSION.set(null);
+
+        String query = "SELECT a.id, a.username, a.password_hash, p.sao_id " +
+                "FROM accounts a " +
+                "LEFT JOIN profiles p ON p.account_id = a.id " +
+                "WHERE a.username = ? " +
+                "LIMIT 1";
+
+        try (Connection connection = DatabaseManager.getConnection();
+             PreparedStatement statement = connection.prepareStatement(query)) {
+            statement.setString(1, username);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+
+                String storedHash = resultSet.getString("password_hash");
+                if (!BCrypt.checkpw(password, storedHash)) {
+                    return Optional.empty();
+                }
+
+                UserSession session = new UserSession(
+                        resultSet.getLong("id"),
+                        resultSet.getString("username"),
+                        resultSet.getString("sao_id")
+                );
+                LAST_AUTHENTICATED_SESSION.set(session);
+                return Optional.of(session);
+            }
+        } catch (SQLException exception) {
+            System.err.println("[Auth] Ошибка авторизации в MySQL: " + exception.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<UserSession> getLastAuthenticatedSession() {
+        return Optional.ofNullable(LAST_AUTHENTICATED_SESSION.get());
+    }
+
+    public static void clearAuthenticatedSession() {
+        LAST_AUTHENTICATED_SESSION.set(null);
+    }
+
+    public static boolean registerUser(
+            String username,
+            String email,
+            String password,
+            String country,
+            String city
+    ) throws RegistrationException {
+        String insertAccountSql =
+                "INSERT INTO accounts(username, email, password_hash) VALUES(?, ?, ?)";
+        String insertProfileSql =
+                "INSERT INTO profiles(" +
+                        "account_id, sao_id, country, city, nickname, title, level, current_xp, required_xp" +
+                        ") VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        Connection connection = null;
         try {
-            conn = DatabaseManager.getConnection();
-            conn.setAutoCommit(false);
+            connection = DatabaseManager.getConnection();
+            connection.setAutoCommit(false);
 
             String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
-
             int accountId = -1;
-            try (PreparedStatement pstmt = conn.prepareStatement(insertAccountSQL, Statement.RETURN_GENERATED_KEYS)) {
-                pstmt.setString(1, username);
-                pstmt.setString(2, email);
-                pstmt.setString(3, hashedPassword);
-                pstmt.executeUpdate();
 
-                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    insertAccountSql,
+                    Statement.RETURN_GENERATED_KEYS
+            )) {
+                statement.setString(1, username);
+                statement.setString(2, email);
+                statement.setString(3, hashedPassword);
+                statement.executeUpdate();
+
+                try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
                     if (generatedKeys.next()) {
                         accountId = generatedKeys.getInt(1);
                     }
@@ -54,40 +117,61 @@ public class AuthService {
             }
 
             String saoId = generateSaoId();
-
-            try (PreparedStatement pstmt = conn.prepareStatement(insertProfileSQL)) {
-                pstmt.setInt(1, accountId);
-                pstmt.setString(2, saoId);
-                pstmt.setString(3, country);
-                pstmt.setString(4, city);
-                pstmt.executeUpdate();
+            try (PreparedStatement statement = connection.prepareStatement(insertProfileSql)) {
+                statement.setInt(1, accountId);
+                statement.setString(2, saoId);
+                statement.setString(3, country);
+                statement.setString(4, city);
+                statement.setString(5, username);
+                statement.setString(6, UserProfile.DEFAULT_TITLE);
+                statement.setInt(7, UserProfile.DEFAULT_LEVEL);
+                statement.setInt(8, UserProfile.DEFAULT_CURRENT_XP);
+                statement.setInt(9, UserProfile.DEFAULT_REQUIRED_XP);
+                statement.executeUpdate();
             }
 
-            conn.commit();
+            connection.commit();
             System.out.println("[Auth] Пользователь зарегистрирован в MySQL. SAO ID: " + saoId);
             return true;
+        } catch (SQLException exception) {
+            rollbackQuietly(connection);
 
-        } catch (SQLException e) {
-            if (conn != null) {
-                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            }
-
-            // Перехватываем дубликаты уникальных ключей MySQL (Код ошибки 1062)
-            if (e.getErrorCode() == 1062) {
-                String errorMsg = e.getMessage().toLowerCase();
-                if (errorMsg.contains("email")) {
+            if (exception.getErrorCode() == 1062) {
+                String errorMessage = exception.getMessage().toLowerCase();
+                if (errorMessage.contains("email")) {
                     throw new RegistrationException("EMAIL ALREADY EXISTS!");
-                } else if (errorMsg.contains("username")) {
+                }
+                if (errorMessage.contains("username")) {
                     throw new RegistrationException("USERNAME TAKEN!");
                 }
             }
 
-            System.err.println("[Auth] Ошибка транзакции MySQL: " + e.getMessage());
+            System.err.println("[Auth] Ошибка транзакции MySQL: " + exception.getMessage());
             throw new RegistrationException("SYNC FAILED!");
         } finally {
-            if (conn != null) {
-                try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-            }
+            closeQuietly(connection);
+        }
+    }
+
+    private static void rollbackQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.rollback();
+        } catch (SQLException exception) {
+            exception.printStackTrace();
+        }
+    }
+
+    private static void closeQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (SQLException exception) {
+            exception.printStackTrace();
         }
     }
 

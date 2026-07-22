@@ -16,37 +16,34 @@ import javafx.stage.StageStyle;
 import java.util.List;
 import java.util.Stack;
 
-/**
- * Single overlay window that switches between the standard menu and profile.
- */
+/** Single overlay window that switches between the standard menu and profile. */
 public class SAOMenu {
-
     private static final double MENU_WIDTH = 280;
     private static final double MENU_HEIGHT = 500;
 
     private static final String BASE_STYLE =
             "-fx-background-color: transparent;" +
-            "-fx-text-fill: white;" +
-            "-fx-font-size: 16px;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 10 20 10 20;";
+                    "-fx-text-fill: white;" +
+                    "-fx-font-size: 16px;" +
+                    "-fx-alignment: center-left;" +
+                    "-fx-padding: 10 20 10 20;";
 
     private static final String HOVER_STYLE =
             "-fx-background-color: rgba(255,255,255,0.2);" +
-            "-fx-text-fill: orange;" +
-            "-fx-font-size: 16px;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 10 20 10 20;";
+                    "-fx-text-fill: orange;" +
+                    "-fx-font-size: 16px;" +
+                    "-fx-alignment: center-left;" +
+                    "-fx-padding: 10 20 10 20;";
 
     private static final String PROFILE_STYLE =
             "-fx-background-color: rgba(255,153,0,0.1);" +
-            "-fx-text-fill: #ff9900;" +
-            "-fx-font-size: 16px;" +
-            "-fx-font-weight: bold;" +
-            "-fx-alignment: center-left;" +
-            "-fx-padding: 12 20 12 20;" +
-            "-fx-border-color: rgba(255,153,0,0.3);" +
-            "-fx-border-width: 0 0 1 0;";
+                    "-fx-text-fill: #ff9900;" +
+                    "-fx-font-size: 16px;" +
+                    "-fx-font-weight: bold;" +
+                    "-fx-alignment: center-left;" +
+                    "-fx-padding: 12 20 12 20;" +
+                    "-fx-border-color: rgba(255,153,0,0.3);" +
+                    "-fx-border-width: 0 0 1 0;";
 
     private final Stack<List<MenuNode>> history = new Stack<>();
     private final MenuScreenContext screenContext = new MenuScreenContext();
@@ -59,6 +56,7 @@ public class SAOMenu {
     private VBox menuContainer;
     private ProfileView profileView;
     private List<MenuNode> rootMenu;
+    private UserSession currentSession = UserSession.guest();
     private String currentActiveUser = "Guest";
 
     public void init() {
@@ -102,12 +100,10 @@ public class SAOMenu {
             if (event.getCode() != KeyCode.ESCAPE) {
                 return;
             }
-
             event.consume();
             boolean handledByOrbit =
-                    stateController.getState() == MenuState.PROFILE
-                    && profileView.handleEscape();
-
+                    stateController.getState() == MenuState.PROFILE &&
+                            profileView.handleEscape();
             if (!handledByOrbit) {
                 stateController.handleEscape();
             }
@@ -129,10 +125,10 @@ public class SAOMenu {
         container.setMaxSize(MENU_WIDTH, MENU_HEIGHT);
         container.setStyle(
                 "-fx-background-color: rgba(30, 30, 30, 0.95);" +
-                "-fx-background-radius: 15;" +
-                "-fx-border-color: white;" +
-                "-fx-border-width: 1;" +
-                "-fx-border-radius: 15;"
+                        "-fx-background-radius: 15;" +
+                        "-fx-border-color: white;" +
+                        "-fx-border-width: 1;" +
+                        "-fx-border-radius: 15;"
         );
         container.setOnMousePressed(event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
@@ -149,7 +145,9 @@ public class SAOMenu {
 
     private void buildInitialMenu() {
         MenuNode profileNode = new MenuNode(currentActiveUser, "", () -> {
-            System.out.println("[Menu] Открываем профиль пользователя: " + currentActiveUser);
+            System.out.println(
+                    "[Menu] Открываем профиль пользователя: " + currentActiveUser
+            );
             showProfile();
         });
 
@@ -164,10 +162,16 @@ public class SAOMenu {
         });
 
         MenuNode subMenu = new MenuNode("Files", "", null);
-        subMenu.addChild(new MenuNode("Documents", "", () ->
-                System.out.println("Open Docs")));
-        subMenu.addChild(new MenuNode("Pictures", "", () ->
-                System.out.println("Open Pics")));
+        subMenu.addChild(new MenuNode(
+                "Documents",
+                "",
+                () -> System.out.println("Open Docs")
+        ));
+        subMenu.addChild(new MenuNode(
+                "Pictures",
+                "",
+                () -> System.out.println("Open Pics")
+        ));
 
         MenuNode settings = new MenuNode("Settings", "⚙", null);
         settings.addChild(new MenuNode("Log Out", "⎋", () -> {
@@ -225,12 +229,10 @@ public class SAOMenu {
         return button;
     }
 
-    /**
-     * Starts or returns to the standard menu and captures the monitor only when
-     * the overlay was previously fully hidden.
-     */
-    public void showMenu(String username, double mouseX, double mouseY) {
-        currentActiveUser = normalizeUsername(username);
+    public void showMenu(UserSession session, double mouseX, double mouseY) {
+        currentSession = session == null ? UserSession.guest() : session;
+        currentActiveUser = normalizeUsername(currentSession.getUsername());
+
         if (mainStage == null) {
             init();
         }
@@ -242,9 +244,14 @@ public class SAOMenu {
         history.clear();
         buildInitialMenu();
         renderLevel(rootMenu);
-        profileView.setUsername(currentActiveUser);
+        profileView.setSession(currentSession);
         stateController.showStandardMenu();
         focusMenu();
+    }
+
+    /** Compatibility overload for older callers. */
+    public void showMenu(String username, double mouseX, double mouseY) {
+        showMenu(UserSession.guest(username), mouseX, mouseY);
     }
 
     public void showMenu(String username) {
@@ -255,7 +262,7 @@ public class SAOMenu {
         if (mainStage == null || stateController.getState() != MenuState.STANDARD_MENU) {
             return;
         }
-        profileView.setUsername(currentActiveUser);
+        profileView.loadProfileAsync(currentSession);
         stateController.showProfile();
         focusMenu();
     }
@@ -292,6 +299,7 @@ public class SAOMenu {
                 menuContainer.setManaged(false);
                 profileView.setVisible(false);
                 profileView.setManaged(false);
+                profileView.cancelProfileLoad();
                 profileView.resetOrbitNavigation();
                 mainStage.hide();
                 screenContext.reset();
@@ -330,7 +338,6 @@ public class SAOMenu {
         mainStage.setY(bounds.getMinY());
         mainStage.setWidth(bounds.getWidth());
         mainStage.setHeight(bounds.getHeight());
-
         menuContainer.setLayoutX(50);
         menuContainer.setLayoutY(
                 Math.max(20, (bounds.getHeight() - MENU_HEIGHT) / 2.0)

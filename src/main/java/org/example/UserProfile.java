@@ -2,15 +2,8 @@ package org.example;
 
 import java.util.Objects;
 
-/**
- * Immutable profile data used by the profile UI.
- *
- * Step 3 still uses starter values, but keeping them in a model prevents
- * ProfileCard from owning business data and prepares the UI for database
- * loading in step 5.
- */
+/** Immutable profile data used by the profile UI. */
 public final class UserProfile {
-
     public static final String DEFAULT_TITLE = "Энтузиаст";
     public static final int DEFAULT_LEVEL = 1;
     public static final int DEFAULT_CURRENT_XP = 0;
@@ -39,12 +32,16 @@ public final class UserProfile {
         this.level = Math.max(1, level);
         this.currentXp = Math.max(0, currentXp);
         this.requiredXp = Math.max(1, requiredXp);
-        this.avatarUri = avatarUri;
+        this.avatarUri = normalizeNullable(avatarUri);
     }
 
     public static UserProfile starter(String nickname) {
+        return starter(-1L, nickname);
+    }
+
+    public static UserProfile starter(long accountId, String nickname) {
         return new UserProfile(
-                -1,
+                accountId,
                 nickname,
                 DEFAULT_TITLE,
                 DEFAULT_LEVEL,
@@ -101,5 +98,10 @@ public final class UserProfile {
     private static String normalize(String value, String fallback) {
         String normalized = Objects.toString(value, "").trim();
         return normalized.isEmpty() ? fallback : normalized;
+    }
+
+    private static String normalizeNullable(String value) {
+        String normalized = Objects.toString(value, "").trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

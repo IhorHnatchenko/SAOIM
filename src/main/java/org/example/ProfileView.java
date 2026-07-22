@@ -1,23 +1,31 @@
 package org.example;
 
+import javafx.concurrent.Task;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Pane;
 
 import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
-/**
- * Profile screen: profile card and the interactive circular menu.
- */
+/** Profile screen: profile card and the interactive circular menu. */
 public final class ProfileView extends Pane {
-
     private static final double MIN_MARGIN = 18;
     private static final double DEFAULT_MARGIN = 30;
+
+    private static final ExecutorService PROFILE_EXECUTOR =
+            Executors.newSingleThreadExecutor(new DaemonThreadFactory());
 
     private final ProfileCard profileCard = new ProfileCard();
     private final CircularMenuPane orbitPane =
             new CircularMenuPane(DemoOrbitData.createRootEntries());
+    private final ProfileRepository profileRepository = new ProfileRepository();
 
+    private UserSession session = UserSession.guest();
     private UserProfile profile = UserProfile.starter("Guest");
+    private Task<UserProfile> activeProfileTask;
+    private long loadGeneration;
 
     public ProfileView() {
         getStyleClass().add("profile-view");
@@ -35,12 +43,99 @@ public final class ProfileView extends Pane {
         consumeSecondaryClicks(profileCard);
     }
 
+    /** Compatibility method for older callers. */
     public void setUsername(String username) {
-        setProfile(profile.withNickname(username));
+        setSession(UserSession.guest(username));
+    }
+
+    public void setSession(UserSession session) {
+        this.session = session == null ? UserSession.guest() : session;
+
+        if (!this.session.isAuthenticated()) {
+            cancelProfileLoad();
+            setProfile(UserProfile.starter(this.session.getUsername()));
+        } else if (profile.getAccountId() != this.session.getAccountId()) {
+            setProfile(UserProfile.starter(
+                    this.session.getAccountId(),
+                    this.session.getUsername()
+            ));
+        }
+    }
+
+    public UserSession getSession() {
+        return session;
+    }
+
+    /**
+     * Loads the profile outside the JavaFX Application Thread. Task callbacks
+     * are delivered on the JavaFX thread by the Task API.
+     */
+    public void loadProfileAsync(UserSession requestedSession) {
+        setSession(requestedSession);
+
+        if (!session.isAuthenticated()) {
+            return;
+        }
+
+        cancelProfileLoad();
+        long generation = ++loadGeneration;
+        long accountId = session.getAccountId();
+        String username = session.getUsername();
+
+        profileCard.showLoading(username);
+
+        Task<UserProfile> task = new Task<>() {
+            @Override
+            protected UserProfile call() throws Exception {
+                return profileRepository.findByAccountId(accountId, username);
+            }
+        };
+
+        task.setOnSucceeded(event -> {
+            if (generation != loadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            setProfile(task.getValue());
+            activeProfileTask = null;
+            System.out.println("[Profile] Профиль загружен для accountId=" + accountId);
+        });
+
+        task.setOnFailed(event -> {
+            if (generation != loadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            Throwable exception = task.getException();
+            profile = UserProfile.starter(accountId, username);
+            profileCard.showLoadError(username);
+            activeProfileTask = null;
+            System.err.println(
+                    "[Profile] Не удалось загрузить профиль accountId=" + accountId + ": " +
+                            (exception == null ? "неизвестная ошибка" : exception.getMessage())
+            );
+        });
+
+        task.setOnCancelled(event -> {
+            if (activeProfileTask == task) {
+                activeProfileTask = null;
+            }
+        });
+
+        activeProfileTask = task;
+        PROFILE_EXECUTOR.execute(task);
+    }
+
+    public void cancelProfileLoad() {
+        loadGeneration++;
+        if (activeProfileTask != null) {
+            activeProfileTask.cancel(true);
+            activeProfileTask = null;
+        }
     }
 
     public void setProfile(UserProfile profile) {
-        this.profile = profile == null ? UserProfile.starter("Guest") : profile;
+        this.profile = profile == null
+                ? UserProfile.starter(session.getAccountId(), session.getUsername())
+                : profile;
         profileCard.setProfile(this.profile);
     }
 
@@ -48,9 +143,7 @@ public final class ProfileView extends Pane {
         return profile;
     }
 
-    /**
-     * @return true when Esc was consumed by nested orbit navigation.
-     */
+    /** @return true when Esc was consumed by nested orbit navigation. */
     public boolean handleEscape() {
         return orbitPane.handleEscape();
     }
@@ -83,13 +176,14 @@ public final class ProfileView extends Pane {
                 MIN_MARGIN,
                 DEFAULT_MARGIN
         );
+
         double cardWidth = profileCard.getScaledDesignWidth();
         double cardHeight = profileCard.getScaledDesignHeight();
 
-        // Scaling occurs around the node center; compensate to keep the visual
-        // profile card anchored to the upper-left corner.
-        double scaleXCompensation = (cardWidth - profileCard.getPrefWidth()) / 2.0;
-        double scaleYCompensation = (cardHeight - profileCard.getPrefHeight()) / 2.0;
+        double scaleXCompensation =
+                (cardWidth - profileCard.getPrefWidth()) / 2.0;
+        double scaleYCompensation =
+                (cardHeight - profileCard.getPrefHeight()) / 2.0;
 
         profileCard.resizeRelocate(
                 margin + scaleXCompensation,
@@ -102,7 +196,6 @@ public final class ProfileView extends Pane {
         double orbitTop = margin * 0.35;
         double orbitWidth = Math.max(320, width - orbitLeft - margin);
         double orbitHeight = Math.max(320, height - orbitTop - margin * 0.35);
-
         orbitPane.resizeRelocate(orbitLeft, orbitTop, orbitWidth, orbitHeight);
     }
 
@@ -121,5 +214,14 @@ public final class ProfileView extends Pane {
 
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static final class DaemonThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "saoim-profile-loader");
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }
