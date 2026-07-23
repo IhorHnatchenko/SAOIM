@@ -26,14 +26,18 @@ public final class ProfileView extends Pane {
     private final ProfileRepository profileRepository = new ProfileRepository();
     private final CategoryService categoryService = new CategoryService();
     private final ShortcutService shortcutService = new ShortcutService();
+    private final AppLauncher appLauncher = new AppLauncher();
 
     private UserSession session = UserSession.guest();
     private UserProfile profile = UserProfile.starter("Guest");
     private CategorySnapshot categorySnapshot = emptySnapshot(-1);
     private Task<UserProfile> activeProfileTask;
     private Task<CategorySnapshot> activeDataTask;
+    private Task<LaunchResult> activeLaunchTask;
     private long profileLoadGeneration;
     private long dataLoadGeneration;
+    private long launchGeneration;
+    private Runnable onShortcutLaunched = () -> { };
 
     public ProfileView() {
         getStyleClass().add("profile-view");
@@ -45,6 +49,7 @@ public final class ProfileView extends Pane {
         getChildren().addAll(profileCard, orbitPane, dialogLayer);
         profileCard.setProfile(profile);
         consumeSecondaryClicks(profileCard);
+        orbitPane.setShortcutResolver(id -> categorySnapshot.findShortcut(id));
         configureOrbitActions();
     }
 
@@ -76,6 +81,12 @@ public final class ProfileView extends Pane {
 
     public UserSession getSession() {
         return session;
+    }
+
+    public void setOnShortcutLaunched(Runnable onShortcutLaunched) {
+        this.onShortcutLaunched = onShortcutLaunched == null
+                ? () -> { }
+                : onShortcutLaunched;
     }
 
     /** Loads profile, categories and shortcuts outside JavaFX Application Thread. */
@@ -193,6 +204,7 @@ public final class ProfileView extends Pane {
         dataLoadGeneration++;
         cancelProfileTask();
         cancelDataTask();
+        cancelLaunchTask();
         dialogLayer.close();
     }
 
@@ -522,7 +534,72 @@ public final class ProfileView extends Pane {
                         )
                 );
             }
+
+
+            @Override
+            public void launchShortcut(long shortcutId) {
+                launchShortcutAsync(shortcutId);
+            }
         });
+    }
+
+
+    private void launchShortcutAsync(long shortcutId) {
+        AppShortcut shortcut = categorySnapshot.findShortcut(shortcutId);
+        if (shortcut == null) {
+            showShortcutMissing();
+            return;
+        }
+        if (activeLaunchTask != null) {
+            orbitPane.setStatus("Дождитесь завершения предыдущего запуска.");
+            return;
+        }
+
+        long generation = ++launchGeneration;
+        orbitPane.setBusy(true, "Запуск «" + shortcut.getDisplayName() + "»…");
+        Task<LaunchResult> task = new Task<>() {
+            @Override
+            protected LaunchResult call() {
+                return appLauncher.launch(shortcut);
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != launchGeneration) {
+                return;
+            }
+            activeLaunchTask = null;
+            LaunchResult result = task.getValue();
+            if (result != null && result.success()) {
+                orbitPane.setBusy(false, result.message());
+                System.out.println("[Launcher] " + result.message());
+                onShortcutLaunched.run();
+            } else {
+                String message = result == null
+                        ? "Стратегия запуска не вернула результат."
+                        : result.message();
+                orbitPane.setBusy(false, "Запуск не выполнен");
+                dialogLayer.showError("Не удалось запустить ярлык", message);
+                System.err.println("[Launcher] " + message);
+            }
+        });
+        task.setOnFailed(event -> {
+            if (generation != launchGeneration) {
+                return;
+            }
+            activeLaunchTask = null;
+            String message = messageFrom(task.getException());
+            orbitPane.setBusy(false, "Запуск не выполнен");
+            dialogLayer.showError("Не удалось запустить ярлык", message);
+            System.err.println("[Launcher] " + message);
+        });
+        task.setOnCancelled(event -> {
+            if (activeLaunchTask == task) {
+                activeLaunchTask = null;
+                orbitPane.setBusy(false, "Запуск отменён");
+            }
+        });
+        activeLaunchTask = task;
+        DATA_EXECUTOR.execute(task);
     }
 
     private void executeDataMutation(
@@ -627,6 +704,15 @@ public final class ProfileView extends Pane {
         if (activeDataTask != null) {
             activeDataTask.cancel(true);
             activeDataTask = null;
+        }
+    }
+
+
+    private void cancelLaunchTask() {
+        launchGeneration++;
+        if (activeLaunchTask != null) {
+            activeLaunchTask.cancel(true);
+            activeLaunchTask = null;
         }
     }
 

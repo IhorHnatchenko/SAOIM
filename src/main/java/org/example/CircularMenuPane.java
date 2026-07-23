@@ -16,6 +16,7 @@ import javafx.scene.shape.Line;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 
 /**
@@ -64,6 +65,9 @@ public final class CircularMenuPane extends Pane {
 
         default void deleteShortcut(long shortcutId) {
         }
+
+        default void launchShortcut(long shortcutId) {
+        }
     }
 
     private final Circle orbitBackdrop = createCircle("orbit-backdrop");
@@ -95,6 +99,10 @@ public final class CircularMenuPane extends Pane {
     private final Button createShortcutButton = createToolButton(
             "＋↗",
             "Создать ярлык в текущей категории (Ctrl+Insert)"
+    );
+    private final Button launchButton = createToolButton(
+            "▶",
+            "Запустить выбранный ярлык (Enter)"
     );
     private final Button editButton = createToolButton(
             "✎",
@@ -130,6 +138,7 @@ public final class CircularMenuPane extends Pane {
             showAllButton,
             createCategoryButton,
             createShortcutButton,
+            launchButton,
             editButton,
             moveButton,
             upButton,
@@ -145,6 +154,10 @@ public final class CircularMenuPane extends Pane {
     private List<OrbitEntry> pinnedRootEntries = List.of();
     private List<OrbitEntry> allRootEntries = List.of();
     private CategoryActions categoryActions;
+    private final ShortcutAvailabilityService availabilityService =
+            new ShortcutAvailabilityService();
+    private final IconService iconService = new IconService();
+    private Function<Long, AppShortcut> shortcutResolver = ignored -> null;
     private int pageIndex;
     private OrbitItemView selectedItem;
     private boolean showAllRootCategories;
@@ -216,6 +229,7 @@ public final class CircularMenuPane extends Pane {
         showAllButton.setOnAction(event -> toggleRootMode());
         createCategoryButton.setOnAction(event -> createCategory());
         createShortcutButton.setOnAction(event -> createShortcut());
+        launchButton.setOnAction(event -> launchSelected());
         editButton.setOnAction(event -> editSelected());
         moveButton.setOnAction(event -> moveSelected());
         upButton.setOnAction(event -> moveSelectedRelative(-1));
@@ -237,6 +251,11 @@ public final class CircularMenuPane extends Pane {
     public void setCategoryActions(CategoryActions categoryActions) {
         this.categoryActions = categoryActions;
         updateToolBarState();
+    }
+
+    public void setShortcutResolver(Function<Long, AppShortcut> shortcutResolver) {
+        this.shortcutResolver = shortcutResolver == null ? ignored -> null : shortcutResolver;
+        refreshCurrentLevel();
     }
 
     public void setCategoryData(
@@ -427,7 +446,7 @@ public final class CircularMenuPane extends Pane {
         }
         select(item);
         if (entry.isShortcut()) {
-            setStatus("Запуск ярлыков будет подключён на этапе 8");
+            launchShortcut(entry, item.getAvailability());
         }
     }
 
@@ -486,6 +505,38 @@ public final class CircularMenuPane extends Pane {
             return;
         }
         categoryActions.createShortcut(parentId, getCurrentParentLabel());
+    }
+
+
+    private void launchSelected() {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (entry == null || !entry.isDatabaseShortcut()) {
+            return;
+        }
+        LaunchAvailability availability = selectedItem == null
+                ? LaunchAvailability.available("")
+                : selectedItem.getAvailability();
+        launchShortcut(entry, availability);
+    }
+
+    private void launchShortcut(OrbitEntry entry, LaunchAvailability availability) {
+        if (categoryActions == null || busy || !entry.isDatabaseShortcut()) {
+            return;
+        }
+        if (!entry.isEnabled()) {
+            setStatus("Ярлык отключён. Откройте редактор F2, чтобы включить его.");
+            return;
+        }
+        if (availability != null && availability.checking()) {
+            setStatus("Дождитесь завершения проверки ярлыка.");
+            return;
+        }
+        if (availability != null && !availability.available()) {
+            setStatus(availability.message());
+            return;
+        }
+        setStatus("Запуск: " + entry.getTitle() + "…");
+        categoryActions.launchShortcut(entry.getShortcutId());
     }
 
     private void editSelected() {
@@ -583,7 +634,16 @@ public final class CircularMenuPane extends Pane {
         int to = Math.min(entries.size(), from + PAGE_SIZE);
 
         for (OrbitEntry entry : entries.subList(from, to)) {
-            OrbitItemView item = new OrbitItemView(entry);
+            AppShortcut shortcut = entry.isDatabaseShortcut()
+                    ? shortcutResolver.apply(entry.getShortcutId())
+                    : null;
+            OrbitItemView item = new OrbitItemView(
+                    entry,
+                    shortcut,
+                    availabilityService,
+                    iconService,
+                    this::updateToolBarState
+            );
             item.setOnMouseClicked(event -> {
                 if (event.getButton() == MouseButton.PRIMARY) {
                     select(item);
@@ -635,6 +695,10 @@ public final class CircularMenuPane extends Pane {
         boolean hasSelection = selected != null
                 && (selected.isDatabaseCategory() || selected.isDatabaseShortcut());
         boolean selectedCategory = selected != null && selected.isDatabaseCategory();
+        boolean selectedShortcut = selected != null && selected.isDatabaseShortcut();
+        boolean selectedShortcutAvailable = selectedShortcut
+                && selectedItem != null
+                && selectedItem.getAvailability().available();
         boolean atRoot = navigation.isAtRoot();
         boolean insideCategory = navigation.getCurrentCategoryId() != null;
 
@@ -650,6 +714,9 @@ public final class CircularMenuPane extends Pane {
         createCategoryButton.setDisable(busy || categoryActions == null);
         createShortcutButton.setDisable(
                 busy || categoryActions == null || !insideCategory
+        );
+        launchButton.setDisable(
+                busy || categoryActions == null || !selectedShortcutAvailable
         );
         editButton.setDisable(busy || !hasSelection);
         moveButton.setDisable(busy || !hasSelection);

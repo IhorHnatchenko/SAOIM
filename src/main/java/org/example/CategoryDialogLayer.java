@@ -15,7 +15,13 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
+import javafx.stage.Window;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -527,6 +533,9 @@ public final class CategoryDialogLayer extends StackPane {
         private final TextField workingDirectoryField = new TextField();
         private final TextField iconSourceField = new TextField();
         private final CheckBox enabledBox = new CheckBox("Ярлык включён");
+        private final Button targetBrowseButton = button("Обзор…", false);
+        private final Button workingDirectoryBrowseButton = button("Обзор…", false);
+        private final Button iconBrowseButton = button("Обзор…", false);
         private final ScrollPane scrollPane;
 
         private ShortcutForm(AppShortcut shortcut) {
@@ -537,12 +546,14 @@ public final class CategoryDialogLayer extends StackPane {
             workingDirectoryField.getStyleClass().add("category-dialog-input");
             iconSourceField.getStyleClass().add("category-dialog-input");
             enabledBox.getStyleClass().add("category-dialog-check");
+            targetBrowseButton.getStyleClass().add("shortcut-browse-button");
+            workingDirectoryBrowseButton.getStyleClass().add("shortcut-browse-button");
+            iconBrowseButton.getStyleClass().add("shortcut-browse-button");
 
             nameField.setPromptText("Например: IntelliJ IDEA");
-            targetField.setPromptText("Путь, URL или идентификатор Store-приложения");
-            argumentsField.setPromptText("Необязательно; запуск подключится на этапе 8");
+            argumentsField.setPromptText("Необязательно; кавычки поддерживаются");
             workingDirectoryField.setPromptText("Необязательно");
-            iconSourceField.setPromptText("Эмодзи, ключ или путь к иконке");
+            iconSourceField.setPromptText("Эмодзи или путь к PNG/JPG/файлу");
 
             typeBox.getItems().setAll(LaunchType.values());
             typeBox.setMaxWidth(Double.MAX_VALUE);
@@ -560,14 +571,30 @@ public final class CategoryDialogLayer extends StackPane {
                 typeBox.getSelectionModel().select(LaunchType.EXECUTABLE);
             }
 
+            HBox targetRow = browseRow(targetField, targetBrowseButton);
+            HBox workingDirectoryRow = browseRow(
+                    workingDirectoryField,
+                    workingDirectoryBrowseButton
+            );
+            HBox iconRow = browseRow(iconSourceField, iconBrowseButton);
+
+            targetBrowseButton.setOnAction(event -> browseTarget());
+            workingDirectoryBrowseButton.setOnAction(event -> browseDirectory(
+                    workingDirectoryField,
+                    "Выберите рабочую папку"
+            ));
+            iconBrowseButton.setOnAction(event -> browseIcon());
+            typeBox.setOnAction(event -> updateTargetControls());
+            updateTargetControls();
+
             VBox form = new VBox(
                     9,
                     field("Название", nameField),
                     field("Тип", typeBox),
-                    field("Цель", targetField),
+                    field("Цель", targetRow),
                     field("Аргументы", argumentsField),
-                    field("Рабочая папка", workingDirectoryField),
-                    field("Источник иконки", iconSourceField),
+                    field("Рабочая папка", workingDirectoryRow),
+                    field("Источник иконки", iconRow),
                     enabledBox
             );
             form.setFillWidth(true);
@@ -579,6 +606,140 @@ public final class CategoryDialogLayer extends StackPane {
             scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
             scrollPane.setPrefViewportHeight(430);
             scrollPane.setMaxHeight(470);
+        }
+
+        private HBox browseRow(TextField field, Button browseButton) {
+            HBox row = new HBox(8, field, browseButton);
+            row.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(field, Priority.ALWAYS);
+            field.setMaxWidth(Double.MAX_VALUE);
+            return row;
+        }
+
+        private void updateTargetControls() {
+            LaunchType type = typeBox.getValue();
+            boolean canBrowse = type == LaunchType.EXECUTABLE
+                    || type == LaunchType.WINDOWS_SHORTCUT
+                    || type == LaunchType.FILE
+                    || type == LaunchType.DIRECTORY;
+            targetBrowseButton.setDisable(!canBrowse);
+            targetField.setPromptText(switch (type == null
+                    ? LaunchType.EXECUTABLE
+                    : type) {
+                case EXECUTABLE -> "Путь к .exe";
+                case WINDOWS_SHORTCUT -> "Путь к .lnk";
+                case FILE -> "Путь к файлу";
+                case DIRECTORY -> "Путь к папке";
+                case URL -> "https://example.com";
+                case MICROSOFT_STORE_APP -> "PackageFamilyName!App (AUMID)";
+            });
+        }
+
+        private void browseTarget() {
+            LaunchType type = typeBox.getValue();
+            if (type == LaunchType.DIRECTORY) {
+                browseDirectory(targetField, "Выберите папку");
+                return;
+            }
+            if (type == null || type == LaunchType.URL
+                    || type == LaunchType.MICROSOFT_STORE_APP) {
+                return;
+            }
+
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Выберите цель ярлыка");
+            configureInitialDirectory(chooser, targetField.getText());
+            switch (type) {
+                case EXECUTABLE -> chooser.getExtensionFilters().add(
+                        new FileChooser.ExtensionFilter("Приложения Windows (*.exe)", "*.exe")
+                );
+                case WINDOWS_SHORTCUT -> chooser.getExtensionFilters().add(
+                        new FileChooser.ExtensionFilter("Ярлыки Windows (*.lnk)", "*.lnk")
+                );
+                case FILE -> chooser.getExtensionFilters().add(
+                        new FileChooser.ExtensionFilter("Все файлы", "*.*")
+                );
+                default -> { }
+            }
+            File selected = chooser.showOpenDialog(ownerWindow());
+            if (selected != null) {
+                targetField.setText(selected.getAbsolutePath());
+                if (nameField.getText() == null || nameField.getText().isBlank()) {
+                    nameField.setText(stripExtension(selected.getName()));
+                }
+                if (workingDirectoryField.getText() == null
+                        || workingDirectoryField.getText().isBlank()) {
+                    File parent = selected.getParentFile();
+                    if (parent != null) {
+                        workingDirectoryField.setText(parent.getAbsolutePath());
+                    }
+                }
+            }
+        }
+
+        private void browseDirectory(TextField destination, String title) {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle(title);
+            File initial = existingDirectory(destination.getText());
+            if (initial != null) {
+                chooser.setInitialDirectory(initial);
+            }
+            File selected = chooser.showDialog(ownerWindow());
+            if (selected != null) {
+                destination.setText(selected.getAbsolutePath());
+            }
+        }
+
+        private void browseIcon() {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Выберите источник иконки");
+            configureInitialDirectory(chooser, iconSourceField.getText());
+            chooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter(
+                            "Изображения (*.png, *.jpg, *.jpeg, *.gif, *.bmp)",
+                            "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"
+                    ),
+                    new FileChooser.ExtensionFilter(
+                            "Файлы с системной иконкой (*.exe, *.lnk, *.ico)",
+                            "*.exe", "*.lnk", "*.ico"
+                    ),
+                    new FileChooser.ExtensionFilter("Все файлы", "*.*")
+            );
+            File selected = chooser.showOpenDialog(ownerWindow());
+            if (selected != null) {
+                iconSourceField.setText(selected.getAbsolutePath());
+            }
+        }
+
+        private void configureInitialDirectory(FileChooser chooser, String rawPath) {
+            File directory = existingDirectory(rawPath);
+            if (directory != null) {
+                chooser.setInitialDirectory(directory);
+            }
+        }
+
+        private File existingDirectory(String rawPath) {
+            if (rawPath == null || rawPath.isBlank()) {
+                return null;
+            }
+            try {
+                Path path = LaunchPathResolver.resolvePath(rawPath);
+                if (Files.isRegularFile(path)) {
+                    path = path.getParent();
+                }
+                return path != null && Files.isDirectory(path) ? path.toFile() : null;
+            } catch (RuntimeException ignored) {
+                return null;
+            }
+        }
+
+        private Window ownerWindow() {
+            return getScene() == null ? null : getScene().getWindow();
+        }
+
+        private String stripExtension(String name) {
+            int dot = name == null ? -1 : name.lastIndexOf('.');
+            return dot > 0 ? name.substring(0, dot) : nullToEmpty(name);
         }
 
         private Node node() {
@@ -617,4 +778,5 @@ public final class CategoryDialogLayer extends StackPane {
             return value == null ? "" : value;
         }
     }
+
 }

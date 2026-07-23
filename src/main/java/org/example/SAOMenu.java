@@ -74,6 +74,7 @@ public class SAOMenu {
 
         menuContainer = createStandardMenuContainer();
         profileView = new ProfileView();
+        profileView.setOnShortcutLaunched(this::hideMenu);
         profileView.setVisible(false);
         profileView.setManaged(false);
 

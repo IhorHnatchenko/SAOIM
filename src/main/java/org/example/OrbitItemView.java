@@ -6,6 +6,8 @@ import javafx.scene.AccessibleRole;
 import javafx.scene.control.Label;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -21,18 +23,46 @@ public final class OrbitItemView extends StackPane {
     private static final PseudoClass UNAVAILABLE = PseudoClass.getPseudoClass("unavailable");
 
     private final OrbitEntry entry;
+    private final Label fallbackIconLabel = new Label();
+    private final ImageView imageView = new ImageView();
+    private final Label markerLabel = new Label();
+    private final Tooltip tooltip = new Tooltip();
+    private final Runnable onAvailabilityChanged;
+    private LaunchAvailability availability;
 
     public OrbitItemView(OrbitEntry entry) {
+        this(entry, null, null, null, null);
+    }
+
+    public OrbitItemView(
+            OrbitEntry entry,
+            AppShortcut shortcut,
+            ShortcutAvailabilityService availabilityService,
+            IconService iconService
+    ) {
+        this(entry, shortcut, availabilityService, iconService, null);
+    }
+
+    public OrbitItemView(
+            OrbitEntry entry,
+            AppShortcut shortcut,
+            ShortcutAvailabilityService availabilityService,
+            IconService iconService,
+            Runnable onAvailabilityChanged
+    ) {
         this.entry = entry == null
                 ? OrbitEntry.item("empty", "Без названия", "◇", "Нет описания")
                 : entry;
+        this.onAvailabilityChanged = onAvailabilityChanged == null
+                ? () -> { }
+                : onAvailabilityChanged;
+        this.availability = initialAvailability(this.entry, shortcut, availabilityService);
 
         getStyleClass().add("orbit-item");
         pseudoClassStateChanged(CATEGORY, this.entry.isCategory());
         pseudoClassStateChanged(LEAF, !this.entry.isCategory());
         pseudoClassStateChanged(PINNED, this.entry.isRootPinned());
         pseudoClassStateChanged(SHORTCUT, this.entry.isShortcut());
-        pseudoClassStateChanged(UNAVAILABLE, this.entry.isShortcut() && !this.entry.isEnabled());
 
         setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         setPrefSize(112, 96);
@@ -41,8 +71,20 @@ public final class OrbitItemView extends StackPane {
         setAccessibleRole(AccessibleRole.BUTTON);
         setAccessibleText(this.entry.getTitle());
 
-        Label iconLabel = new Label(this.entry.getIcon());
-        iconLabel.getStyleClass().add("orbit-item__icon");
+        fallbackIconLabel.setText(this.entry.getIcon());
+        fallbackIconLabel.getStyleClass().add("orbit-item__icon");
+
+        imageView.getStyleClass().add("orbit-item__image");
+        imageView.setFitWidth(42);
+        imageView.setFitHeight(42);
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        imageView.setVisible(false);
+        imageView.setManaged(false);
+
+        StackPane iconSlot = new StackPane(fallbackIconLabel, imageView);
+        iconSlot.getStyleClass().add("orbit-item__icon-slot");
+        iconSlot.setMouseTransparent(true);
 
         Label titleLabel = new Label(this.entry.getTitle());
         titleLabel.getStyleClass().add("orbit-item__title");
@@ -50,16 +92,25 @@ public final class OrbitItemView extends StackPane {
         titleLabel.setWrapText(false);
         titleLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
 
-        Label markerLabel = new Label(markerText(this.entry));
         markerLabel.getStyleClass().add("orbit-item__marker");
 
-        VBox content = new VBox(4, iconLabel, titleLabel, markerLabel);
+        VBox content = new VBox(4, iconSlot, titleLabel, markerLabel);
         content.setAlignment(Pos.CENTER);
         content.setMouseTransparent(true);
         getChildren().add(content);
 
-        Tooltip.install(this, new Tooltip(tooltipText(this.entry)));
+        Tooltip.install(this, tooltip);
+        updateAvailabilityPresentation();
         consumeSecondaryClicks();
+
+        if (this.entry.isShortcut() && shortcut != null) {
+            if (availabilityService != null && this.entry.isEnabled()) {
+                availabilityService.checkAsync(shortcut, this::setAvailability);
+            }
+            if (iconService != null) {
+                iconService.loadIconAsync(shortcut, this::showImage);
+            }
+        }
     }
 
     /** Compatibility constructor for old StaticOrbitPane. */
@@ -79,11 +130,60 @@ public final class OrbitItemView extends StackPane {
         return entry.getDescription();
     }
 
+    public LaunchAvailability getAvailability() {
+        return availability;
+    }
+
     public void setSelected(boolean selected) {
         pseudoClassStateChanged(SELECTED, selected);
     }
 
-    private String markerText(OrbitEntry entry) {
+    private LaunchAvailability initialAvailability(
+            OrbitEntry entry,
+            AppShortcut shortcut,
+            ShortcutAvailabilityService service
+    ) {
+        if (!entry.isShortcut()) {
+            return LaunchAvailability.available("");
+        }
+        if (!entry.isEnabled()) {
+            return LaunchAvailability.unavailable("Ярлык отключён пользователем.");
+        }
+        if (shortcut == null || service == null) {
+            return LaunchAvailability.unavailable("Данные ярлыка пока недоступны.");
+        }
+        return LaunchAvailability.checking("Проверка доступности…");
+    }
+
+    private void setAvailability(LaunchAvailability newAvailability) {
+        availability = newAvailability == null
+                ? LaunchAvailability.unavailable("Не удалось определить доступность ярлыка.")
+                : newAvailability;
+        updateAvailabilityPresentation();
+        onAvailabilityChanged.run();
+    }
+
+    private void updateAvailabilityPresentation() {
+        boolean unavailable = entry.isShortcut()
+                && !availability.available()
+                && !availability.checking();
+        pseudoClassStateChanged(UNAVAILABLE, unavailable);
+        markerLabel.setText(markerText(entry, availability));
+        tooltip.setText(tooltipText(entry, availability));
+    }
+
+    private void showImage(Image image) {
+        if (image == null || image.isError()) {
+            return;
+        }
+        imageView.setImage(image);
+        imageView.setVisible(true);
+        imageView.setManaged(true);
+        fallbackIconLabel.setVisible(false);
+        fallbackIconLabel.setManaged(false);
+    }
+
+    private String markerText(OrbitEntry entry, LaunchAvailability availability) {
         if (entry.isRootPinned()) {
             return "★ ЗАКРЕПЛЕНА";
         }
@@ -94,13 +194,18 @@ public final class OrbitItemView extends StackPane {
             if (!entry.isEnabled()) {
                 return "ОТКЛЮЧЁН";
             }
-            LaunchType type = entry.getLaunchType();
-            return type == null ? "ЯРЛЫК" : type.name();
+            if (availability.checking()) {
+                return "ПРОВЕРКА…";
+            }
+            if (!availability.available()) {
+                return "НЕДОСТУПЕН";
+            }
+            return "▶ ЗАПУСТИТЬ";
         }
         return "ВЫБРАТЬ";
     }
 
-    private String tooltipText(OrbitEntry entry) {
+    private String tooltipText(OrbitEntry entry, LaunchAvailability availability) {
         StringBuilder builder = new StringBuilder()
                 .append(entry.getTitle())
                 .append('\n')
@@ -108,8 +213,13 @@ public final class OrbitItemView extends StackPane {
         if (entry.isCategory()) {
             builder.append("\nДвойной клик или Enter — открыть");
         } else if (entry.isShortcut()) {
-            builder.append("\nЗапуск будет подключён на этапе 8")
-                    .append("\nF2 — изменить, Delete — удалить");
+            if (!availability.message().isBlank()) {
+                builder.append("\n").append(availability.message());
+            }
+            if (availability.available()) {
+                builder.append("\nДвойной клик или Enter — запустить");
+            }
+            builder.append("\nF2 — изменить, Delete — удалить");
         }
         return builder.toString();
     }

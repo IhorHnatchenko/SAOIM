@@ -65,3 +65,38 @@
 .orbit-tool-button {
     -fx-min-width: 41;
 }
+
+/* Step 8: native icon extraction and launch state. */
+.orbit-item__icon-slot {
+    -fx-min-width: 44;
+    -fx-min-height: 44;
+    -fx-pref-width: 44;
+    -fx-pref-height: 44;
+    -fx-max-width: 44;
+    -fx-max-height: 44;
+    -fx-alignment: center;
+}
+
+.orbit-item__image {
+    -fx-effect: dropshadow(gaussian, rgba(154, 118, 255, 0.72), 10, 0.30, 0, 0);
+}
+
+.orbit-item:unavailable .orbit-item__image {
+    -fx-opacity: 0.48;
+    -fx-effect: none;
+}
+
+.shortcut-browse-button {
+    -fx-background-color: rgba(32, 101, 151, 0.66);
+    -fx-text-fill: #dff7ff;
+    -fx-border-color: rgba(107, 210, 255, 0.70);
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 7 11 7 11;
+    -fx-cursor: hand;
+}
+
+.shortcut-browse-button:hover {
+    -fx-background-color: rgba(45, 133, 192, 0.82);
+    -fx-border-color: rgba(174, 237, 255, 0.96);
+}
