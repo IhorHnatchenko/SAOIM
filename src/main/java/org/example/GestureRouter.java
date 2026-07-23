@@ -8,21 +8,21 @@ import java.util.function.Supplier;
  * Applies the global gesture rules to the current overlay state.
  *
  * MouseHookHandler only recognizes the physical gesture. This class decides
- * whether the gesture may open the menu, return from PROFILE, or merely focus
- * an already open standard menu.
+ * whether the gesture opens the hidden menu, returns PROFILE to the standard
+ * menu, or closes an already visible standard menu.
  */
 public final class GestureRouter {
 
     private final Supplier<MenuState> stateSupplier;
     private final DesktopContextDetector desktopContextDetector;
     private final BiConsumer<Integer, Integer> showStandardMenuAction;
-    private final Runnable focusStandardMenuAction;
+    private final Runnable hideStandardMenuAction;
 
     public GestureRouter(
             Supplier<MenuState> stateSupplier,
             DesktopContextDetector desktopContextDetector,
             BiConsumer<Integer, Integer> showStandardMenuAction,
-            Runnable focusStandardMenuAction
+            Runnable hideStandardMenuAction
     ) {
         this.stateSupplier = Objects.requireNonNull(stateSupplier, "stateSupplier");
         this.desktopContextDetector = Objects.requireNonNull(
@@ -33,9 +33,9 @@ public final class GestureRouter {
                 showStandardMenuAction,
                 "showStandardMenuAction"
         );
-        this.focusStandardMenuAction = Objects.requireNonNull(
-                focusStandardMenuAction,
-                "focusStandardMenuAction"
+        this.hideStandardMenuAction = Objects.requireNonNull(
+                hideStandardMenuAction,
+                "hideStandardMenuAction"
         );
     }
 
@@ -48,8 +48,8 @@ public final class GestureRouter {
                 showStandardMenuAction.accept(activationX, activationY);
             }
             case STANDARD_MENU -> {
-                System.out.println("[Gesture] Стандартное меню уже открыто. Возвращаем фокус.");
-                focusStandardMenuAction.run();
+                System.out.println("[Gesture] STANDARD_MENU -> HIDDEN");
+                hideStandardMenuAction.run();
             }
             case HIDDEN -> {
                 if (!desktopContextDetector.isDesktopActive()) {

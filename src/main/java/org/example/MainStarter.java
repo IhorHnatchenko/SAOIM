@@ -64,7 +64,7 @@ public class MainStarter extends Application {
                     MainStarter::getMenuState,
                     new DesktopContextDetector(),
                     MainStarter::triggerMenu,
-                    MainStarter::focusOverlay
+                    MainStarter::hideOverlay
             );
             MouseHookHandler mouseHook = new MouseHookHandler(
                     gestureRouter,
@@ -92,7 +92,7 @@ public class MainStarter extends Application {
             try {
                 MenuState currentState = getMenuState();
                 if (currentState == MenuState.STANDARD_MENU) {
-                    focusOverlayNow();
+                    hideOverlayNow();
                     return;
                 }
 
@@ -122,6 +122,21 @@ public class MainStarter extends Application {
                 exception.printStackTrace();
             }
         });
+    }
+
+    /**
+     * Closes the currently visible standard menu. The global mouse hook calls
+     * this method from its own thread, therefore the actual UI operation is
+     * always transferred to the JavaFX Application Thread.
+     */
+    public static void hideOverlay() {
+        Platform.runLater(MainStarter::hideOverlayNow);
+    }
+
+    private static void hideOverlayNow() {
+        if (saoMenu != null) {
+            saoMenu.hideMenu();
+        }
     }
 
     public static void focusOverlay() {
