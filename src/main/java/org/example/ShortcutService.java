@@ -202,40 +202,83 @@ public final class ShortcutService {
         }
     }
 
+    /** Compatibility method retained for existing callers. */
     public String softDeleteShortcut(long accountId, long shortcutId) throws SQLException {
+        return softDeleteShortcutForUndo(accountId, shortcutId).batchId();
+    }
+
+    /**
+     * Soft-deletes one shortcut and returns the exact row identifier required
+     * for undo/redo. The surrounding mixed order is not normalized, preserving
+     * the original sortOrder for a lossless restore.
+     */
+    public DeletionBatch softDeleteShortcutForUndo(
+            long accountId,
+            long shortcutId
+    ) throws SQLException {
         validateAccount(accountId);
         try (Connection connection = DatabaseManager.getConnection()) {
             connection.setAutoCommit(false);
             try {
-                List<AppCategory> categories = categoryRepository.findActiveByAccount(
-                        connection,
-                        accountId,
-                        true
-                );
                 List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
                         connection,
                         accountId,
                         true
                 );
-                AppShortcut shortcut = requireShortcut(shortcuts, accountId, shortcutId);
+                requireShortcut(shortcuts, accountId, shortcutId);
                 String batchId = UUID.randomUUID().toString();
-                shortcutRepository.softDelete(
+                List<Long> shortcutIds = List.of(shortcutId);
+                shortcutRepository.softDeleteByIds(
                         connection,
                         accountId,
-                        shortcutId,
+                        shortcutIds,
                         batchId
                 );
-                orderService.normalize(
-                        connection,
+                connection.commit();
+                return new DeletionBatch(
+                        batchId,
                         accountId,
-                        categories,
-                        shortcuts,
-                        shortcut.getCategoryId(),
-                        OrbitOrderService.RecordKind.SHORTCUT,
-                        shortcutId
+                        List.of(),
+                        shortcutIds
+                );
+            } catch (Exception exception) {
+                rollbackQuietly(connection);
+                throw rethrow(exception);
+            }
+        }
+    }
+
+    public void restoreDeletion(DeletionBatch batch) throws SQLException {
+        validateBatch(batch);
+        try (Connection connection = DatabaseManager.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                shortcutRepository.restoreDeleted(
+                        connection,
+                        batch.accountId(),
+                        batch.shortcutIds(),
+                        batch.batchId()
                 );
                 connection.commit();
-                return batchId;
+            } catch (Exception exception) {
+                rollbackQuietly(connection);
+                throw rethrow(exception);
+            }
+        }
+    }
+
+    public void redoDeletion(DeletionBatch batch) throws SQLException {
+        validateBatch(batch);
+        try (Connection connection = DatabaseManager.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                shortcutRepository.softDeleteByIds(
+                        connection,
+                        batch.accountId(),
+                        batch.shortcutIds(),
+                        batch.batchId()
+                );
+                connection.commit();
             } catch (Exception exception) {
                 rollbackQuietly(connection);
                 throw rethrow(exception);
@@ -251,6 +294,23 @@ public final class ShortcutService {
             return List.of();
         }
         return treeService.buildShortcutMoveTargets(snapshot.getCategories());
+    }
+
+    private void validateBatch(DeletionBatch batch) {
+        if (batch == null) {
+            throw new IllegalArgumentException("Пакет удаления отсутствует.");
+        }
+        validateAccount(batch.accountId());
+        if (batch.shortcutIds().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Пакет не содержит ярлыков для восстановления."
+            );
+        }
+        if (!batch.categoryIds().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Пакет поддерева должен восстанавливаться через CategoryService."
+            );
+        }
     }
 
     private ShortcutDraft validateDraft(ShortcutDraft draft) {

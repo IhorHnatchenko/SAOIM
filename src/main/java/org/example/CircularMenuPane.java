@@ -68,6 +68,12 @@ public final class CircularMenuPane extends Pane {
 
         default void launchShortcut(long shortcutId) {
         }
+
+        default void undoLastDeletion() {
+        }
+
+        default void redoLastDeletion() {
+        }
     }
 
     private final Circle orbitBackdrop = createCircle("orbit-backdrop");
@@ -128,6 +134,14 @@ public final class CircularMenuPane extends Pane {
             "⌫",
             "Удалить выбранный элемент (Delete)"
     );
+    private final Button undoButton = createToolButton(
+            "↶",
+            "Отменить последнее удаление (Ctrl+Z)"
+    );
+    private final Button redoButton = createToolButton(
+            "↷",
+            "Повторить отменённое удаление (Ctrl+Shift+Z)"
+    );
     private final Button refreshButton = createToolButton(
             "↻",
             "Перечитать категории и ярлыки из базы"
@@ -145,6 +159,8 @@ public final class CircularMenuPane extends Pane {
             downButton,
             pinButton,
             deleteButton,
+            undoButton,
+            redoButton,
             refreshButton
     );
 
@@ -162,6 +178,10 @@ public final class CircularMenuPane extends Pane {
     private OrbitItemView selectedItem;
     private boolean showAllRootCategories;
     private boolean busy;
+    private boolean canUndoDeletion;
+    private boolean canRedoDeletion;
+    private String undoDescription = "";
+    private String redoDescription = "";
 
     public CircularMenuPane(List<OrbitEntry> rootEntries) {
         getStyleClass().add("circular-menu-pane");
@@ -238,6 +258,16 @@ public final class CircularMenuPane extends Pane {
                 categoryActions == null ? null : categoryActions::togglePinned
         ));
         deleteButton.setOnAction(event -> deleteSelected());
+        undoButton.setOnAction(event -> {
+            if (categoryActions != null && !busy && canUndoDeletion) {
+                categoryActions.undoLastDeletion();
+            }
+        });
+        redoButton.setOnAction(event -> {
+            if (categoryActions != null && !busy && canRedoDeletion) {
+                categoryActions.redoLastDeletion();
+            }
+        });
         refreshButton.setOnAction(event -> {
             if (categoryActions != null && !busy) {
                 categoryActions.refreshCategories();
@@ -257,6 +287,20 @@ public final class CircularMenuPane extends Pane {
         this.shortcutResolver = shortcutResolver == null ? ignored -> null : shortcutResolver;
         refreshCurrentLevel();
     }
+
+    public void setUndoState(
+            boolean canUndo,
+            String undoDescription,
+            boolean canRedo,
+            String redoDescription
+    ) {
+        this.canUndoDeletion = canUndo;
+        this.canRedoDeletion = canRedo;
+        this.undoDescription = normalizeHistoryDescription(undoDescription);
+        this.redoDescription = normalizeHistoryDescription(redoDescription);
+        updateToolBarState();
+    }
+
 
     public void setCategoryData(
             List<OrbitEntry> pinnedRoots,
@@ -724,7 +768,27 @@ public final class CircularMenuPane extends Pane {
         downButton.setDisable(busy || !hasSelection);
         pinButton.setDisable(busy || !selectedCategory || !atRoot);
         deleteButton.setDisable(busy || !hasSelection);
+        undoButton.setDisable(busy || categoryActions == null || !canUndoDeletion);
+        redoButton.setDisable(busy || categoryActions == null || !canRedoDeletion);
+        Tooltip.install(
+                undoButton,
+                new Tooltip(canUndoDeletion
+                        ? "Отменить: " + undoDescription + " (Ctrl+Z)"
+                        : "Нет удалений для отмены")
+        );
+        Tooltip.install(
+                redoButton,
+                new Tooltip(canRedoDeletion
+                        ? "Повторить: " + redoDescription + " (Ctrl+Shift+Z)"
+                        : "Нет действий для повтора")
+        );
         refreshButton.setDisable(busy || categoryActions == null);
+    }
+
+    private String normalizeHistoryDescription(String description) {
+        return description == null || description.isBlank()
+                ? "последнее удаление"
+                : description.trim();
     }
 
     private int totalPages() {

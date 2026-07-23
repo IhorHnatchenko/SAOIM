@@ -178,6 +178,73 @@ public final class ShortcutRepository {
         }
     }
 
+    public void softDeleteByIds(
+            Connection connection,
+            long accountId,
+            List<Long> shortcutIds,
+            String deletionBatchId
+    ) throws SQLException {
+        if (shortcutIds == null || shortcutIds.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(
+                ",",
+                Collections.nCopies(shortcutIds.size(), "?")
+        );
+        String sql = "UPDATE app_shortcuts SET deleted_at = CURRENT_TIMESTAMP, "
+                + "deletion_batch_id = ? "
+                + "WHERE account_id = ? AND deleted_at IS NULL "
+                + "AND id IN (" + placeholders + ")";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, deletionBatchId);
+            statement.setLong(2, accountId);
+            int parameter = 3;
+            for (Long shortcutId : shortcutIds) {
+                statement.setLong(parameter++, shortcutId);
+            }
+            int updated = statement.executeUpdate();
+            if (updated != shortcutIds.size()) {
+                throw new SQLException(
+                        "Не все ярлыки удалось пометить удалёнными: "
+                                + updated + " из " + shortcutIds.size()
+                );
+            }
+        }
+    }
+
+    public void restoreDeleted(
+            Connection connection,
+            long accountId,
+            List<Long> shortcutIds,
+            String deletionBatchId
+    ) throws SQLException {
+        if (shortcutIds == null || shortcutIds.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(
+                ",",
+                Collections.nCopies(shortcutIds.size(), "?")
+        );
+        String sql = "UPDATE app_shortcuts SET deleted_at = NULL, deletion_batch_id = NULL "
+                + "WHERE account_id = ? AND deletion_batch_id = ? "
+                + "AND deleted_at IS NOT NULL AND id IN (" + placeholders + ")";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            statement.setString(2, deletionBatchId);
+            int parameter = 3;
+            for (Long shortcutId : shortcutIds) {
+                statement.setLong(parameter++, shortcutId);
+            }
+            int updated = statement.executeUpdate();
+            if (updated != shortcutIds.size()) {
+                throw new SQLException(
+                        "Не все ярлыки удалось восстановить: "
+                                + updated + " из " + shortcutIds.size()
+                );
+            }
+        }
+    }
+
     private void bindDraft(
             PreparedStatement statement,
             ShortcutDraft draft,

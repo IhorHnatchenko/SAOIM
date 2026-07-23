@@ -196,7 +196,7 @@ public final class CategoryDialogLayer extends StackPane {
                         + "Категорий: " + Math.max(1, categoryCount) + ".\n"
                         + "Ярлыков: " + Math.max(0, shortcutCount) + ".\n\n"
                         + "Все записи получат общий deletionBatchId. "
-                        + "Восстановление через Ctrl+Z будет подключено на этапе 9."
+                        + "После удаления нажмите Ctrl+Z, чтобы восстановить всё поддерево."
         );
         warning.setWrapText(true);
         warning.getStyleClass().add("category-dialog-warning");
@@ -280,7 +280,7 @@ public final class CategoryDialogLayer extends StackPane {
         Label warning = new Label(
                 "Ярлык «" + shortcut.getDisplayName() + "» будет мягко удалён.\n"
                         + "Цель: " + shortcut.getTarget() + "\n\n"
-                        + "Ctrl+Z будет подключён на этапе 9."
+                        + "После удаления нажмите Ctrl+Z, чтобы восстановить ярлык."
         );
         warning.setWrapText(true);
         warning.getStyleClass().add("category-dialog-warning");

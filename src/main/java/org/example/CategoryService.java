@@ -357,10 +357,22 @@ public final class CategoryService {
     }
 
     /**
-     * Deletes the complete category subtree and all shortcuts in the same
-     * transaction. The shared batch id will be used by UndoManager at step 9.
+     * Compatibility method retained for existing callers.
+     * New code should use {@link #softDeleteSubtreeForUndo(long, long)}.
      */
     public String softDeleteSubtree(long accountId, long categoryId) throws SQLException {
+        return softDeleteSubtreeForUndo(accountId, categoryId).batchId();
+    }
+
+    /**
+     * Soft-deletes the complete subtree and returns the exact row set required
+     * for lossless undo/redo. Sort orders and rootPinned values are deliberately
+     * left untouched, so restoration returns every item to its previous place.
+     */
+    public DeletionBatch softDeleteSubtreeForUndo(
+            long accountId,
+            long categoryId
+    ) throws SQLException {
         validateAccount(accountId);
         try (Connection connection = DatabaseManager.getConnection()) {
             connection.setAutoCommit(false);
@@ -376,16 +388,21 @@ public final class CategoryService {
                         true
                 );
                 AppCategory category = requireCategory(categories, accountId, categoryId);
-                Set<Long> ids = new LinkedHashSet<>();
-                ids.add(category.getId());
-                ids.addAll(treeService.collectDescendantIds(categories, categoryId));
+                Set<Long> categoryIdSet = new LinkedHashSet<>();
+                categoryIdSet.add(category.getId());
+                categoryIdSet.addAll(treeService.collectDescendantIds(categories, categoryId));
+
+                List<Long> categoryIds = new ArrayList<>(categoryIdSet);
+                List<Long> shortcutIds = shortcuts.stream()
+                        .filter(shortcut -> categoryIdSet.contains(shortcut.getCategoryId()))
+                        .map(AppShortcut::getId)
+                        .toList();
 
                 String batchId = UUID.randomUUID().toString();
-                List<Long> categoryIds = new ArrayList<>(ids);
-                shortcutRepository.softDeleteByCategoryIds(
+                shortcutRepository.softDeleteByIds(
                         connection,
                         accountId,
-                        categoryIds,
+                        shortcutIds,
                         batchId
                 );
                 repository.softDelete(
@@ -394,17 +411,82 @@ public final class CategoryService {
                         categoryIds,
                         batchId
                 );
-                orderService.normalize(
-                        connection,
+                connection.commit();
+                return new DeletionBatch(
+                        batchId,
                         accountId,
-                        categories,
-                        shortcuts,
-                        category.getParentCategoryId(),
-                        OrbitOrderService.RecordKind.CATEGORY,
-                        categoryId
+                        categoryIds,
+                        shortcutIds
+                );
+            } catch (Exception exception) {
+                rollbackQuietly(connection);
+                throw rethrow(exception);
+            }
+        }
+    }
+
+    /** Restores a previously deleted category subtree in one transaction. */
+    public void restoreDeletion(DeletionBatch batch) throws SQLException {
+        validateBatch(batch, true);
+        try (Connection connection = DatabaseManager.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                int activePinned = repository.countActivePinnedRoots(
+                        connection,
+                        batch.accountId()
+                );
+                int restoringPinned = repository.countDeletedPinnedRoots(
+                        connection,
+                        batch.accountId(),
+                        batch.batchId()
+                );
+                if (activePinned + restoringPinned
+                        > PinningService.MAX_PINNED_ROOT_CATEGORIES) {
+                    throw new IllegalStateException(
+                            "Восстановление превысит лимит закреплённых категорий. "
+                                    + "Сначала открепите одну из активных категорий."
+                    );
+                }
+
+                repository.restoreDeleted(
+                        connection,
+                        batch.accountId(),
+                        batch.categoryIds(),
+                        batch.batchId()
+                );
+                shortcutRepository.restoreDeleted(
+                        connection,
+                        batch.accountId(),
+                        batch.shortcutIds(),
+                        batch.batchId()
                 );
                 connection.commit();
-                return batchId;
+            } catch (Exception exception) {
+                rollbackQuietly(connection);
+                throw rethrow(exception);
+            }
+        }
+    }
+
+    /** Re-applies a category deletion after it has been undone. */
+    public void redoDeletion(DeletionBatch batch) throws SQLException {
+        validateBatch(batch, true);
+        try (Connection connection = DatabaseManager.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                shortcutRepository.softDeleteByIds(
+                        connection,
+                        batch.accountId(),
+                        batch.shortcutIds(),
+                        batch.batchId()
+                );
+                repository.softDelete(
+                        connection,
+                        batch.accountId(),
+                        batch.categoryIds(),
+                        batch.batchId()
+                );
+                connection.commit();
             } catch (Exception exception) {
                 rollbackQuietly(connection);
                 throw rethrow(exception);
@@ -463,6 +545,18 @@ public final class CategoryService {
 
     private boolean sameParent(Long first, Long second) {
         return first == null ? second == null : first.equals(second);
+    }
+
+    private void validateBatch(DeletionBatch batch, boolean requireCategories) {
+        if (batch == null) {
+            throw new IllegalArgumentException("Пакет удаления отсутствует.");
+        }
+        validateAccount(batch.accountId());
+        if (requireCategories && batch.categoryIds().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Пакет не содержит категорий для восстановления."
+            );
+        }
     }
 
     private void validateAccount(long accountId) {

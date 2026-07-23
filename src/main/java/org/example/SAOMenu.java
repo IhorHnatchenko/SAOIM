@@ -98,6 +98,11 @@ public class SAOMenu {
         Scene scene = new Scene(rootPane);
         scene.setFill(Color.TRANSPARENT);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (stateController.getState() == MenuState.PROFILE
+                    && profileView.handleHistoryShortcut(event)) {
+                event.consume();
+                return;
+            }
             if (event.getCode() != KeyCode.ESCAPE) {
                 return;
             }

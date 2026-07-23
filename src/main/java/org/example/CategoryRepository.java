@@ -170,7 +170,7 @@ public final class CategoryRepository {
         }
         String placeholders = String.join(",", java.util.Collections.nCopies(categoryIds.size(), "?"));
         String sql = "UPDATE app_categories SET deleted_at = CURRENT_TIMESTAMP, "
-                + "deletion_batch_id = ?, root_pinned = FALSE "
+                + "deletion_batch_id = ? "
                 + "WHERE account_id = ? AND deleted_at IS NULL AND id IN (" + placeholders + ")";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, deletionBatchId);
@@ -179,7 +179,79 @@ public final class CategoryRepository {
             for (Long id : categoryIds) {
                 statement.setLong(parameter++, id);
             }
-            statement.executeUpdate();
+            int updated = statement.executeUpdate();
+            if (updated != categoryIds.size()) {
+                throw new SQLException(
+                        "Не все категории удалось пометить удалёнными: "
+                                + updated + " из " + categoryIds.size()
+                );
+            }
+        }
+    }
+
+    public void restoreDeleted(
+            Connection connection,
+            long accountId,
+            List<Long> categoryIds,
+            String deletionBatchId
+    ) throws SQLException {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(
+                ",",
+                java.util.Collections.nCopies(categoryIds.size(), "?")
+        );
+        String sql = "UPDATE app_categories SET deleted_at = NULL, deletion_batch_id = NULL "
+                + "WHERE account_id = ? AND deletion_batch_id = ? "
+                + "AND deleted_at IS NOT NULL AND id IN (" + placeholders + ")";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            statement.setString(2, deletionBatchId);
+            int parameter = 3;
+            for (Long id : categoryIds) {
+                statement.setLong(parameter++, id);
+            }
+            int updated = statement.executeUpdate();
+            if (updated != categoryIds.size()) {
+                throw new SQLException(
+                        "Не все категории удалось восстановить: "
+                                + updated + " из " + categoryIds.size()
+                );
+            }
+        }
+    }
+
+    public int countActivePinnedRoots(
+            Connection connection,
+            long accountId
+    ) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM app_categories "
+                + "WHERE account_id = ? AND parent_category_id IS NULL "
+                + "AND root_pinned = TRUE AND deleted_at IS NULL";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getInt(1) : 0;
+            }
+        }
+    }
+
+    public int countDeletedPinnedRoots(
+            Connection connection,
+            long accountId,
+            String deletionBatchId
+    ) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM app_categories "
+                + "WHERE account_id = ? AND deletion_batch_id = ? "
+                + "AND parent_category_id IS NULL AND root_pinned = TRUE "
+                + "AND deleted_at IS NOT NULL";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            statement.setString(2, deletionBatchId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getInt(1) : 0;
+            }
         }
     }
 

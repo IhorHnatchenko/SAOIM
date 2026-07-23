@@ -1,6 +1,8 @@
 package org.example;
 
 import javafx.concurrent.Task;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Pane;
 
@@ -27,6 +29,7 @@ public final class ProfileView extends Pane {
     private final CategoryService categoryService = new CategoryService();
     private final ShortcutService shortcutService = new ShortcutService();
     private final AppLauncher appLauncher = new AppLauncher();
+    private UndoManager undoManager = new UndoManager();
 
     private UserSession session = UserSession.guest();
     private UserProfile profile = UserProfile.starter("Guest");
@@ -51,6 +54,7 @@ public final class ProfileView extends Pane {
         consumeSecondaryClicks(profileCard);
         orbitPane.setShortcutResolver(id -> categorySnapshot.findShortcut(id));
         configureOrbitActions();
+        updateUndoState();
     }
 
     /** Compatibility method for older callers. */
@@ -62,6 +66,11 @@ public final class ProfileView extends Pane {
         UserSession next = session == null ? UserSession.guest() : session;
         boolean accountChanged = this.session.getAccountId() != next.getAccountId();
         this.session = next;
+
+        if (accountChanged || !this.session.isAuthenticated()) {
+            undoManager = new UndoManager();
+            updateUndoState();
+        }
 
         if (!this.session.isAuthenticated()) {
             cancelProfileLoad();
@@ -227,6 +236,30 @@ public final class ProfileView extends Pane {
         return orbitPane.handleEscape();
     }
 
+    public boolean handleHistoryShortcut(KeyEvent event) {
+        if (event == null
+                || dialogLayer.isDialogOpen()
+                || !event.isControlDown()
+                || event.getCode() != KeyCode.Z) {
+            return false;
+        }
+        if (event.isShiftDown()) {
+            redoLastDeletion();
+        } else {
+            undoLastDeletion();
+        }
+        return true;
+    }
+
+    public void undoLastDeletion() {
+        executeHistoryChange(false);
+    }
+
+    public void redoLastDeletion() {
+        executeHistoryChange(true);
+    }
+
+
     public void resetOrbitNavigation() {
         orbitPane.resetNavigation();
     }
@@ -376,19 +409,16 @@ public final class ProfileView extends Pane {
                         category,
                         categoryCount,
                         shortcutCount,
-                        () -> executeDataMutation(
+                        () -> executeUndoableDeletion(
                                 "Удаление поддерева…",
                                 "Не удалось удалить категорию",
-                                () -> {
-                                    String batchId = categoryService.softDeleteSubtree(
-                                            session.getAccountId(),
-                                            categoryId
-                                    );
-                                    System.out.println(
-                                            "[Categories] deletionBatchId=" + batchId
-                                    );
-                                    return null;
-                                }
+                                new DeleteCategoryCommand(
+                                        categoryService,
+                                        session.getAccountId(),
+                                        categoryId,
+                                        category.getName()
+                                ),
+                                "Категория удалена — Ctrl+Z для отмены"
                         )
                 );
             }
@@ -518,23 +548,30 @@ public final class ProfileView extends Pane {
                 }
                 dialogLayer.showDeleteShortcut(
                         shortcut,
-                        () -> executeDataMutation(
+                        () -> executeUndoableDeletion(
                                 "Удаление ярлыка…",
                                 "Не удалось удалить ярлык",
-                                () -> {
-                                    String batchId = shortcutService.softDeleteShortcut(
-                                            session.getAccountId(),
-                                            shortcutId
-                                    );
-                                    System.out.println(
-                                            "[Shortcuts] deletionBatchId=" + batchId
-                                    );
-                                    return null;
-                                }
+                                new DeleteShortcutCommand(
+                                        shortcutService,
+                                        session.getAccountId(),
+                                        shortcutId,
+                                        shortcut.getDisplayName()
+                                ),
+                                "Ярлык удалён — Ctrl+Z для отмены"
                         )
                 );
             }
 
+
+            @Override
+            public void undoLastDeletion() {
+                ProfileView.this.undoLastDeletion();
+            }
+
+            @Override
+            public void redoLastDeletion() {
+                ProfileView.this.redoLastDeletion();
+            }
 
             @Override
             public void launchShortcut(long shortcutId) {
@@ -602,6 +639,153 @@ public final class ProfileView extends Pane {
         DATA_EXECUTOR.execute(task);
     }
 
+    private void executeUndoableDeletion(
+            String busyMessage,
+            String errorTitle,
+            UndoableCommand command,
+            String successMessage
+    ) {
+        if (!ensureAuthenticated()) {
+            return;
+        }
+        cancelDataTask();
+        long generation = ++dataLoadGeneration;
+        long accountId = session.getAccountId();
+        List<Long> preferredPath = orbitPane.getNavigationPathCategoryIds();
+        boolean showAllRoots = orbitPane.isShowingAllRootCategories();
+
+        UndoManager history = undoManager;
+        dialogLayer.showBusy(busyMessage);
+        orbitPane.setBusy(true, busyMessage);
+        Task<CategorySnapshot> task = new Task<>() {
+            @Override
+            protected CategorySnapshot call() throws Exception {
+                history.execute(command);
+                return categoryService.loadSnapshot(accountId);
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            activeDataTask = null;
+            dialogLayer.close();
+            applyCategorySnapshot(task.getValue(), preferredPath, showAllRoots);
+            updateUndoState();
+            orbitPane.setBusy(false, successMessage);
+            System.out.println("[Undo] Добавлено в историю: " + command.description());
+        });
+        task.setOnFailed(event -> {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            activeDataTask = null;
+            orbitPane.setBusy(false, "Удаление не выполнено");
+            dialogLayer.showError(errorTitle, messageFrom(task.getException()));
+            System.err.println("[Undo] Ошибка удаления: " + messageFrom(task.getException()));
+        });
+        task.setOnCancelled(event -> {
+            if (activeDataTask == task) {
+                activeDataTask = null;
+            }
+        });
+        activeDataTask = task;
+        DATA_EXECUTOR.execute(task);
+    }
+
+    private void executeHistoryChange(boolean redo) {
+        if (!ensureAuthenticated()) {
+            return;
+        }
+        if (dialogLayer.isDialogOpen()) {
+            return;
+        }
+        if (activeDataTask != null) {
+            orbitPane.setStatus("Дождитесь завершения текущей операции.");
+            return;
+        }
+
+        UndoManager history = undoManager;
+        String description = (redo
+                ? history.nextRedoDescription()
+                : history.nextUndoDescription())
+                .orElse(null);
+        if (description == null) {
+            orbitPane.setStatus(redo
+                    ? "Нет действий для повтора."
+                    : "Нет действий для отмены.");
+            updateUndoState();
+            return;
+        }
+
+        long generation = ++dataLoadGeneration;
+        long accountId = session.getAccountId();
+        List<Long> preferredPath = orbitPane.getNavigationPathCategoryIds();
+        boolean showAllRoots = orbitPane.isShowingAllRootCategories();
+        String busyMessage = redo
+                ? "Повтор действия…"
+                : "Отмена действия…";
+        String errorTitle = redo
+                ? "Не удалось повторить действие"
+                : "Не удалось отменить действие";
+
+        dialogLayer.showBusy(busyMessage);
+        orbitPane.setBusy(true, busyMessage);
+        Task<CategorySnapshot> task = new Task<>() {
+            @Override
+            protected CategorySnapshot call() throws Exception {
+                if (redo) {
+                    history.redo();
+                } else {
+                    history.undo();
+                }
+                return categoryService.loadSnapshot(accountId);
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            activeDataTask = null;
+            dialogLayer.close();
+            applyCategorySnapshot(task.getValue(), preferredPath, showAllRoots);
+            updateUndoState();
+            orbitPane.setBusy(
+                    false,
+                    (redo ? "Повторено: " : "Отменено: ") + description
+            );
+            System.out.println(
+                    "[Undo] " + (redo ? "Повторено: " : "Отменено: ") + description
+            );
+        });
+        task.setOnFailed(event -> {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
+                return;
+            }
+            activeDataTask = null;
+            orbitPane.setBusy(false, "История не изменена");
+            updateUndoState();
+            dialogLayer.showError(errorTitle, messageFrom(task.getException()));
+            System.err.println("[Undo] Ошибка: " + messageFrom(task.getException()));
+        });
+        task.setOnCancelled(event -> {
+            if (activeDataTask == task) {
+                activeDataTask = null;
+            }
+        });
+        activeDataTask = task;
+        DATA_EXECUTOR.execute(task);
+    }
+
+    private void updateUndoState() {
+        orbitPane.setUndoState(
+                undoManager.canUndo(),
+                undoManager.nextUndoDescription().orElse(""),
+                undoManager.canRedo(),
+                undoManager.nextRedoDescription().orElse("")
+        );
+    }
+
     private void executeDataMutation(
             String busyMessage,
             String errorTitle,
@@ -632,6 +816,11 @@ public final class ProfileView extends Pane {
             activeDataTask = null;
             dialogLayer.close();
             applyCategorySnapshot(task.getValue(), preferredPath, showAllRoots);
+            // Operations that are not command-based can invalidate the exact
+            // ordering captured by deletion commands. Until those operations
+            // become undoable too, start a fresh safe history boundary.
+            undoManager.clear();
+            updateUndoState();
             orbitPane.setBusy(false, "Изменения сохранены");
         });
         task.setOnFailed(event -> {
@@ -666,6 +855,7 @@ public final class ProfileView extends Pane {
                 preferredPath,
                 showAllRoots
         );
+        updateUndoState();
     }
 
     private boolean ensureAuthenticated() {
