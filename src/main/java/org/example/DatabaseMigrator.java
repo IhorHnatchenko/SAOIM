@@ -8,7 +8,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Applies small, idempotent schema upgrades to an existing SAOIM database. */
+/** Applies idempotent schema upgrades to an existing SAOIM database. */
 public final class DatabaseMigrator {
     private DatabaseMigrator() {
     }
@@ -16,6 +16,7 @@ public final class DatabaseMigrator {
     public static void migrate(Connection connection) throws SQLException {
         migrateProfiles(connection);
         migrateCategories(connection);
+        migrateShortcuts(connection);
     }
 
     private static void migrateProfiles(Connection connection) throws SQLException {
@@ -29,7 +30,12 @@ public final class DatabaseMigrator {
         );
         ensureColumn(connection, "profiles", "level", "INT NOT NULL DEFAULT 1");
         ensureColumn(connection, "profiles", "current_xp", "INT NOT NULL DEFAULT 0");
-        ensureColumn(connection, "profiles", "required_xp", "INT NOT NULL DEFAULT 1000");
+        ensureColumn(
+                connection,
+                "profiles",
+                "required_xp",
+                "INT NOT NULL DEFAULT 1000"
+        );
         ensureColumn(connection, "profiles", "avatar_uri", "VARCHAR(1000) NULL");
         createMissingProfiles(connection);
         backfillProfileValues(connection);
@@ -40,11 +46,31 @@ public final class DatabaseMigrator {
     private static void migrateCategories(Connection connection) throws SQLException {
         System.out.println("[DB] Проверка миграций категорий...");
         ensureColumn(connection, "app_categories", "parent_category_id", "BIGINT NULL");
-        ensureColumn(connection, "app_categories", "icon_key", "VARCHAR(32) NOT NULL DEFAULT '◇'");
-        ensureColumn(connection, "app_categories", "root_pinned", "BOOLEAN NOT NULL DEFAULT FALSE");
-        ensureColumn(connection, "app_categories", "sort_order", "INT NOT NULL DEFAULT 0");
+        ensureColumn(
+                connection,
+                "app_categories",
+                "icon_key",
+                "VARCHAR(32) NOT NULL DEFAULT '◇'"
+        );
+        ensureColumn(
+                connection,
+                "app_categories",
+                "root_pinned",
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+        );
+        ensureColumn(
+                connection,
+                "app_categories",
+                "sort_order",
+                "INT NOT NULL DEFAULT 0"
+        );
         ensureColumn(connection, "app_categories", "deletion_batch_id", "CHAR(36) NULL");
-        ensureColumn(connection, "app_categories", "deleted_at", "TIMESTAMP NULL DEFAULT NULL");
+        ensureColumn(
+                connection,
+                "app_categories",
+                "deleted_at",
+                "TIMESTAMP NULL DEFAULT NULL"
+        );
         ensureColumn(
                 connection,
                 "app_categories",
@@ -73,6 +99,84 @@ public final class DatabaseMigrator {
         );
         createDefaultCategoriesForExistingAccounts(connection);
         System.out.println("[DB] Миграции категорий применены.");
+    }
+
+    private static void migrateShortcuts(Connection connection) throws SQLException {
+        System.out.println("[DB] Проверка миграций ярлыков...");
+        ensureColumn(connection, "app_shortcuts", "account_id", "INT NOT NULL");
+        ensureColumn(connection, "app_shortcuts", "category_id", "BIGINT NOT NULL");
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "display_name",
+                "VARCHAR(120) NOT NULL"
+        );
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "launch_type",
+                "VARCHAR(32) NOT NULL DEFAULT 'EXECUTABLE'"
+        );
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "target",
+                "VARCHAR(2000) NOT NULL"
+        );
+        ensureColumn(connection, "app_shortcuts", "arguments", "VARCHAR(2000) NULL");
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "working_directory",
+                "VARCHAR(1000) NULL"
+        );
+        ensureColumn(connection, "app_shortcuts", "icon_source", "VARCHAR(1000) NULL");
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "sort_order",
+                "INT NOT NULL DEFAULT 0"
+        );
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "enabled",
+                "BOOLEAN NOT NULL DEFAULT TRUE"
+        );
+        ensureColumn(connection, "app_shortcuts", "deletion_batch_id", "CHAR(36) NULL");
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "deleted_at",
+                "TIMESTAMP NULL DEFAULT NULL"
+        );
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "created_at",
+                "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        );
+        ensureColumn(
+                connection,
+                "app_shortcuts",
+                "updated_at",
+                "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+        );
+        ensureIndex(
+                connection,
+                "app_shortcuts",
+                "ix_shortcuts_account_category",
+                "CREATE INDEX ix_shortcuts_account_category ON app_shortcuts "
+                        + "(account_id, category_id, deleted_at, sort_order)"
+        );
+        ensureIndex(
+                connection,
+                "app_shortcuts",
+                "ix_shortcuts_deletion_batch",
+                "CREATE INDEX ix_shortcuts_deletion_batch ON app_shortcuts "
+                        + "(account_id, deletion_batch_id)"
+        );
+        System.out.println("[DB] Миграции ярлыков применены.");
     }
 
     private static void ensureColumn(

@@ -1,0 +1,67 @@
+/* Step 7: mixed category/shortcut orbit and shortcut editor. */
+
+.orbit-item:shortcut {
+    -fx-border-color: rgba(171, 132, 255, 0.92);
+    -fx-background-color: linear-gradient(
+        to bottom,
+        rgba(43, 31, 102, 0.97),
+        rgba(17, 20, 65, 0.97)
+    );
+    -fx-effect: dropshadow(gaussian, rgba(122, 82, 255, 0.58), 17, 0.25, 0, 0);
+}
+
+.orbit-item:shortcut:hover,
+.orbit-item:shortcut:focused {
+    -fx-border-color: rgba(221, 203, 255, 1.0);
+    -fx-background-color: linear-gradient(
+        to bottom,
+        rgba(72, 50, 154, 0.99),
+        rgba(31, 34, 101, 0.99)
+    );
+    -fx-effect: dropshadow(gaussian, rgba(159, 116, 255, 0.82), 23, 0.31, 0, 0);
+}
+
+.orbit-item:shortcut .orbit-item__icon {
+    -fx-text-fill: #d3bdff;
+    -fx-effect: dropshadow(gaussian, rgba(151, 103, 255, 0.72), 9, 0.32, 0, 0);
+}
+
+.orbit-item:shortcut .orbit-item__marker {
+    -fx-text-fill: rgba(201, 177, 255, 0.78);
+    -fx-font-size: 7.5px;
+}
+
+.orbit-item:unavailable {
+    -fx-opacity: 0.55;
+    -fx-border-color: rgba(159, 166, 187, 0.68);
+    -fx-effect: none;
+}
+
+.orbit-item:unavailable .orbit-item__marker {
+    -fx-text-fill: #ff9caf;
+}
+
+.shortcut-dialog-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0 5 0 0;
+}
+
+.shortcut-dialog-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.shortcut-dialog-scroll .scroll-bar:vertical {
+    -fx-background-color: rgba(2, 18, 39, 0.72);
+    -fx-pref-width: 10;
+}
+
+.shortcut-dialog-scroll .thumb {
+    -fx-background-color: rgba(87, 199, 255, 0.62);
+    -fx-background-radius: 6;
+}
+
+.orbit-tool-button {
+    -fx-min-width: 41;
+}

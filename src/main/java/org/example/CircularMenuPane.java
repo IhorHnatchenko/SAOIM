@@ -16,15 +16,20 @@ import javafx.scene.shape.Line;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongConsumer;
 
 /**
- * Data-driven circular menu with paging, nested navigation and category
- * management controls.
+ * Data-driven circular menu with eight entries per page, nested categories and
+ * mixed category/shortcut management.
  */
 public final class CircularMenuPane extends Pane {
     public static final int PAGE_SIZE = 8;
     private static final int TICK_COUNT = 32;
 
+    /**
+     * Existing category methods remain abstract for compatibility with step 6.
+     * Shortcut methods are defaults so an older implementation still compiles.
+     */
     public interface CategoryActions {
         void createCategory(Long parentCategoryId, String parentLabel);
 
@@ -41,6 +46,24 @@ public final class CircularMenuPane extends Pane {
         void deleteCategory(long categoryId);
 
         void refreshCategories();
+
+        default void createShortcut(long categoryId, String categoryLabel) {
+        }
+
+        default void editShortcut(long shortcutId) {
+        }
+
+        default void moveShortcut(long shortcutId) {
+        }
+
+        default void moveShortcutUp(long shortcutId) {
+        }
+
+        default void moveShortcutDown(long shortcutId) {
+        }
+
+        default void deleteShortcut(long shortcutId) {
+        }
     }
 
     private final Circle orbitBackdrop = createCircle("orbit-backdrop");
@@ -49,7 +72,6 @@ public final class CircularMenuPane extends Pane {
     private final Circle middleRing = createRing("orbit-ring--middle");
     private final Circle innerRing = createRing("orbit-ring--inner");
     private final Circle coreRing = createRing("orbit-ring--core");
-
     private final Line[] tickLines = new Line[TICK_COUNT];
     private final Line[] connectorGlowLines = new Line[PAGE_SIZE];
     private final Line[] connectorLines = new Line[PAGE_SIZE];
@@ -62,19 +84,52 @@ public final class CircularMenuPane extends Pane {
     private final Label breadcrumbLabel = new Label();
     private final Label statusLabel = new Label();
 
-    private final Button showAllButton = createToolButton("Все", "Показать все корневые категории");
-    private final Button createButton = createToolButton("＋", "Создать категорию (Insert)");
-    private final Button editButton = createToolButton("✎", "Переименовать и изменить значок (F2)");
-    private final Button moveButton = createToolButton("⇄", "Переместить категорию");
-    private final Button upButton = createToolButton("↑", "Поднять выше (Ctrl+Up)");
-    private final Button downButton = createToolButton("↓", "Опустить ниже (Ctrl+Down)");
-    private final Button pinButton = createToolButton("★", "Закрепить или открепить корневую категорию");
-    private final Button deleteButton = createToolButton("⌫", "Удалить категорию (Delete)");
-    private final Button refreshButton = createToolButton("↻", "Обновить категории");
+    private final Button showAllButton = createToolButton(
+            "Все",
+            "Показать все или только закреплённые корневые категории"
+    );
+    private final Button createCategoryButton = createToolButton(
+            "＋",
+            "Создать категорию (Insert)"
+    );
+    private final Button createShortcutButton = createToolButton(
+            "＋↗",
+            "Создать ярлык в текущей категории (Ctrl+Insert)"
+    );
+    private final Button editButton = createToolButton(
+            "✎",
+            "Изменить выбранный элемент (F2)"
+    );
+    private final Button moveButton = createToolButton(
+            "⇄",
+            "Переместить выбранный элемент"
+    );
+    private final Button upButton = createToolButton(
+            "↑",
+            "Поднять выше в общем порядке (Ctrl+Up)"
+    );
+    private final Button downButton = createToolButton(
+            "↓",
+            "Опустить ниже в общем порядке (Ctrl+Down)"
+    );
+    private final Button pinButton = createToolButton(
+            "★",
+            "Закрепить или открепить корневую категорию (Ctrl+P)"
+    );
+    private final Button deleteButton = createToolButton(
+            "⌫",
+            "Удалить выбранный элемент (Delete)"
+    );
+    private final Button refreshButton = createToolButton(
+            "↻",
+            "Перечитать категории и ярлыки из базы"
+    );
+
     private final HBox toolBar = new HBox(
             7,
             showAllButton,
-            createButton,
+            createCategoryButton,
+            createShortcutButton,
             editButton,
             moveButton,
             upButton,
@@ -136,6 +191,7 @@ public final class CircularMenuPane extends Pane {
 
         previousPageButton.setOnAction(event -> showPreviousPage());
         nextPageButton.setOnAction(event -> showNextPage());
+
         commandCrystal.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY) {
                 if (navigation.canGoBack()) {
@@ -158,13 +214,16 @@ public final class CircularMenuPane extends Pane {
         consumeSecondaryClicks(commandCrystal);
 
         showAllButton.setOnAction(event -> toggleRootMode());
-        createButton.setOnAction(event -> createCategory());
-        editButton.setOnAction(event -> withSelectedCategory(categoryActions::editCategory));
-        moveButton.setOnAction(event -> withSelectedCategory(categoryActions::moveCategory));
-        upButton.setOnAction(event -> withSelectedCategory(categoryActions::moveCategoryUp));
-        downButton.setOnAction(event -> withSelectedCategory(categoryActions::moveCategoryDown));
-        pinButton.setOnAction(event -> withSelectedCategory(categoryActions::togglePinned));
-        deleteButton.setOnAction(event -> withSelectedCategory(categoryActions::deleteCategory));
+        createCategoryButton.setOnAction(event -> createCategory());
+        createShortcutButton.setOnAction(event -> createShortcut());
+        editButton.setOnAction(event -> editSelected());
+        moveButton.setOnAction(event -> moveSelected());
+        upButton.setOnAction(event -> moveSelectedRelative(-1));
+        downButton.setOnAction(event -> moveSelectedRelative(1));
+        pinButton.setOnAction(event -> withSelectedCategory(
+                categoryActions == null ? null : categoryActions::togglePinned
+        ));
+        deleteButton.setOnAction(event -> deleteSelected());
         refreshButton.setOnAction(event -> {
             if (categoryActions != null && !busy) {
                 categoryActions.refreshCategories();
@@ -214,7 +273,9 @@ public final class CircularMenuPane extends Pane {
     }
 
     public String getCurrentParentLabel() {
-        return navigation.isAtRoot() ? "Корень категорий" : navigation.getBreadcrumb();
+        return navigation.isAtRoot()
+                ? "Корень категорий"
+                : navigation.getBreadcrumb();
     }
 
     public void setBusy(boolean busy, String message) {
@@ -226,8 +287,9 @@ public final class CircularMenuPane extends Pane {
     }
 
     public void setStatus(String message) {
-        statusLabel.setText(message == null ? "" : message);
-        statusLabel.setVisible(message != null && !message.isBlank());
+        String safe = message == null ? "" : message;
+        statusLabel.setText(safe);
+        statusLabel.setVisible(!safe.isBlank());
         statusLabel.setManaged(statusLabel.isVisible());
         requestLayout();
     }
@@ -241,10 +303,7 @@ public final class CircularMenuPane extends Pane {
     }
 
     public void resetNavigation() {
-        showAllRootCategories = false;
-        if (pinnedRootEntries.isEmpty()) {
-            showAllRootCategories = true;
-        }
+        showAllRootCategories = pinnedRootEntries.isEmpty();
         navigation.replaceRootEntries(getActiveRootEntries(), List.of());
         pageIndex = 0;
         clearSelection();
@@ -269,23 +328,31 @@ public final class CircularMenuPane extends Pane {
         } else if (event.getCode() == KeyCode.PAGE_DOWN && !nextPageButton.isDisabled()) {
             showNextPage();
             event.consume();
+        } else if (event.isControlDown() && event.getCode() == KeyCode.INSERT) {
+            createShortcut();
+            event.consume();
         } else if (event.getCode() == KeyCode.INSERT) {
             createCategory();
             event.consume();
         } else if (event.getCode() == KeyCode.F2) {
-            withSelectedCategory(categoryActions == null ? null : categoryActions::editCategory);
+            editSelected();
             event.consume();
         } else if (event.getCode() == KeyCode.DELETE) {
-            withSelectedCategory(categoryActions == null ? null : categoryActions::deleteCategory);
+            deleteSelected();
             event.consume();
         } else if (event.isControlDown() && event.getCode() == KeyCode.UP) {
-            withSelectedCategory(categoryActions == null ? null : categoryActions::moveCategoryUp);
+            moveSelectedRelative(-1);
             event.consume();
         } else if (event.isControlDown() && event.getCode() == KeyCode.DOWN) {
-            withSelectedCategory(categoryActions == null ? null : categoryActions::moveCategoryDown);
+            moveSelectedRelative(1);
             event.consume();
         } else if (event.isControlDown() && event.getCode() == KeyCode.P) {
-            withSelectedCategory(categoryActions == null ? null : categoryActions::togglePinned);
+            withSelectedCategory(categoryActions == null
+                    ? null
+                    : categoryActions::togglePinned);
+            event.consume();
+        } else if (event.getCode() == KeyCode.ENTER && selectedItem != null) {
+            open(selectedItem);
             event.consume();
         }
     }
@@ -329,26 +396,39 @@ public final class CircularMenuPane extends Pane {
         selectedItem = item;
         selectedItem.setSelected(true);
         OrbitEntry entry = item.getEntry();
-        commandCrystal.setSelectionText(
-                entry.getTitle(),
-                entry.isRootPinned() ? "Закреплена на главной орбите" : entry.getDescription()
-        );
+
+        String subtitle;
+        if (entry.isRootPinned()) {
+            subtitle = "Закреплена на главной орбите";
+        } else if (entry.isShortcut()) {
+            subtitle = (entry.isEnabled() ? "Ярлык · " : "Отключён · ")
+                    + (entry.getLaunchType() == null
+                    ? "неизвестный тип"
+                    : entry.getLaunchType().getDisplayName());
+        } else {
+            subtitle = entry.getDescription();
+        }
+        commandCrystal.setSelectionText(entry.getTitle(), subtitle);
         commandCrystal.setBackAvailable(navigation.canGoBack());
         updateToolBarState();
     }
 
     private void open(OrbitItemView item) {
         OrbitEntry entry = item.getEntry();
-        if (!entry.isCategory()) {
-            select(item);
+        if (entry.isCategory()) {
+            navigation.enter(entry);
+            pageIndex = 0;
+            clearSelection();
+            setStatus("");
+            refreshCurrentLevel();
+            requestFocus();
+            System.out.println("[Orbit] Открыта категория: " + entry.getTitle());
             return;
         }
-        navigation.enter(entry);
-        pageIndex = 0;
-        clearSelection();
-        refreshCurrentLevel();
-        requestFocus();
-        System.out.println("[Orbit] Открыта категория: " + entry.getTitle());
+        select(item);
+        if (entry.isShortcut()) {
+            setStatus("Запуск ярлыков будет подключён на этапе 8");
+        }
     }
 
     private void clearSelection() {
@@ -365,6 +445,7 @@ public final class CircularMenuPane extends Pane {
         }
         pageIndex = 0;
         clearSelection();
+        setStatus("");
         refreshCurrentLevel();
         requestFocus();
         System.out.println("[Orbit] Возврат: " + navigation.getBreadcrumb());
@@ -377,7 +458,7 @@ public final class CircularMenuPane extends Pane {
         showAllRootCategories = !showAllRootCategories;
         if (!showAllRootCategories && pinnedRootEntries.isEmpty()) {
             showAllRootCategories = true;
-            setStatus("Нет закреплённых категорий. Выберите категорию и нажмите ★.");
+            setStatus("Нет закреплённых категорий.");
         }
         navigation.replaceRootEntries(getActiveRootEntries(), List.of());
         pageIndex = 0;
@@ -385,76 +466,129 @@ public final class CircularMenuPane extends Pane {
         refreshCurrentLevel();
     }
 
-    private List<OrbitEntry> getActiveRootEntries() {
-        return showAllRootCategories ? allRootEntries : pinnedRootEntries;
-    }
-
     private void createCategory() {
         if (categoryActions == null || busy) {
             return;
         }
         categoryActions.createCategory(
-                navigation.getCurrentCategoryId(),
-                navigation.isAtRoot() ? "Корень категорий" : navigation.getBreadcrumb()
+                getCurrentParentCategoryId(),
+                getCurrentParentLabel()
         );
     }
 
-    private void withSelectedCategory(java.util.function.LongConsumer action) {
-        if (action == null || busy || selectedItem == null) {
+    private void createShortcut() {
+        if (categoryActions == null || busy) {
             return;
         }
-        Long categoryId = selectedItem.getEntry().getCategoryId();
-        if (categoryId != null && categoryId > 0) {
-            action.accept(categoryId);
+        Long parentId = getCurrentParentCategoryId();
+        if (parentId == null) {
+            setStatus("Сначала откройте категорию — ярлыки нельзя хранить в корне");
+            return;
+        }
+        categoryActions.createShortcut(parentId, getCurrentParentLabel());
+    }
+
+    private void editSelected() {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (entry == null || categoryActions == null || busy) {
+            return;
+        }
+        if (entry.isDatabaseCategory()) {
+            categoryActions.editCategory(entry.getCategoryId());
+        } else if (entry.isDatabaseShortcut()) {
+            categoryActions.editShortcut(entry.getShortcutId());
         }
     }
 
+    private void moveSelected() {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (entry == null || categoryActions == null || busy) {
+            return;
+        }
+        if (entry.isDatabaseCategory()) {
+            categoryActions.moveCategory(entry.getCategoryId());
+        } else if (entry.isDatabaseShortcut()) {
+            categoryActions.moveShortcut(entry.getShortcutId());
+        }
+    }
+
+    private void moveSelectedRelative(int direction) {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (entry == null || categoryActions == null || busy) {
+            return;
+        }
+        if (entry.isDatabaseCategory()) {
+            if (direction < 0) {
+                categoryActions.moveCategoryUp(entry.getCategoryId());
+            } else {
+                categoryActions.moveCategoryDown(entry.getCategoryId());
+            }
+        } else if (entry.isDatabaseShortcut()) {
+            if (direction < 0) {
+                categoryActions.moveShortcutUp(entry.getShortcutId());
+            } else {
+                categoryActions.moveShortcutDown(entry.getShortcutId());
+            }
+        }
+    }
+
+    private void deleteSelected() {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (entry == null || categoryActions == null || busy) {
+            return;
+        }
+        if (entry.isDatabaseCategory()) {
+            categoryActions.deleteCategory(entry.getCategoryId());
+        } else if (entry.isDatabaseShortcut()) {
+            categoryActions.deleteShortcut(entry.getShortcutId());
+        }
+    }
+
+    private OrbitEntry selectedEntryOrNull() {
+        return selectedItem == null ? null : selectedItem.getEntry();
+    }
+
+    private void withSelectedCategory(LongConsumer action) {
+        OrbitEntry entry = selectedEntryOrNull();
+        if (action == null || busy || entry == null || !entry.isDatabaseCategory()) {
+            return;
+        }
+        action.accept(entry.getCategoryId());
+    }
+
     private void showPreviousPage() {
-        if (pageIndex <= 0 || busy) {
+        if (busy || pageIndex <= 0) {
             return;
         }
         pageIndex--;
         clearSelection();
-        refreshVisibleItems();
-        updateCrystalForCurrentLevel();
+        refreshCurrentLevel();
     }
 
     private void showNextPage() {
-        int pageCount = getPageCount();
-        if (pageIndex >= pageCount - 1 || busy) {
+        if (busy || pageIndex + 1 >= totalPages()) {
             return;
         }
         pageIndex++;
         clearSelection();
-        refreshVisibleItems();
-        updateCrystalForCurrentLevel();
+        refreshCurrentLevel();
     }
 
     private void refreshCurrentLevel() {
-        pageIndex = clampPageIndex(pageIndex);
-        refreshVisibleItems();
-        updateCrystalForCurrentLevel();
-        breadcrumbLabel.setText(navigation.getBreadcrumb());
-        updateToolBarState();
-    }
-
-    private void refreshVisibleItems() {
-        getChildren().removeAll(visibleItems);
-        visibleItems.clear();
-
+        removeVisibleItems();
         List<OrbitEntry> entries = navigation.getCurrentEntries();
-        pageIndex = clampPageIndex(pageIndex);
-        int fromIndex = Math.min(pageIndex * PAGE_SIZE, entries.size());
-        int toIndex = Math.min(fromIndex + PAGE_SIZE, entries.size());
+        int totalPages = Math.max(1, (entries.size() + PAGE_SIZE - 1) / PAGE_SIZE);
+        pageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+        int from = Math.min(entries.size(), pageIndex * PAGE_SIZE);
+        int to = Math.min(entries.size(), from + PAGE_SIZE);
 
-        for (OrbitEntry entry : entries.subList(fromIndex, toIndex)) {
+        for (OrbitEntry entry : entries.subList(from, to)) {
             OrbitItemView item = new OrbitItemView(entry);
             item.setOnMouseClicked(event -> {
                 if (event.getButton() == MouseButton.PRIMARY) {
+                    select(item);
                     if (event.getClickCount() >= 2) {
                         open(item);
-                    } else {
-                        select(item);
                     }
                     event.consume();
                 }
@@ -469,78 +603,80 @@ public final class CircularMenuPane extends Pane {
                 }
             });
             visibleItems.add(item);
+            getChildren().add(item);
         }
-        getChildren().addAll(visibleItems);
-        updatePagingControls();
+
+        previousPageButton.setDisable(pageIndex <= 0);
+        nextPageButton.setDisable(pageIndex + 1 >= totalPages);
+        previousPageButton.setVisible(totalPages > 1);
+        nextPageButton.setVisible(totalPages > 1);
+        previousPageButton.setManaged(previousPageButton.isVisible());
+        nextPageButton.setManaged(nextPageButton.isVisible());
+        pageIndicator.setText((pageIndex + 1) + " / " + totalPages);
+        pageIndicator.setVisible(totalPages > 1);
+        pageIndicator.setManaged(pageIndicator.isVisible());
+
+        breadcrumbLabel.setText(navigation.getBreadcrumb());
+        updateCrystalForCurrentLevel();
+        updateToolBarState();
         requestLayout();
     }
 
     private void updateCrystalForCurrentLevel() {
-        String title = navigation.getCurrentTitle();
-        String subtitle;
-        if (navigation.isAtRoot()) {
-            subtitle = showAllRootCategories
-                    ? "Все корневые категории"
-                    : "Закреплённые категории";
-        } else {
-            subtitle = navigation.getBreadcrumb();
-        }
-        commandCrystal.setLevelText(title, subtitle, navigation.canGoBack());
-    }
-
-    private void updatePagingControls() {
-        int pageCount = getPageCount();
-        previousPageButton.setDisable(pageIndex <= 0 || busy);
-        nextPageButton.setDisable(pageIndex >= pageCount - 1 || busy);
-        previousPageButton.setVisible(pageCount > 1);
-        nextPageButton.setVisible(pageCount > 1);
-        pageIndicator.setVisible(pageCount > 1);
-        pageIndicator.setText((pageIndex + 1) + " / " + pageCount);
+        commandCrystal.setLevelText(
+                navigation.getCurrentTitle(),
+                navigation.getBreadcrumb(),
+                navigation.canGoBack()
+        );
     }
 
     private void updateToolBarState() {
-        boolean actionsAvailable = categoryActions != null && !busy;
-        OrbitEntry selected = getSelectedEntry();
-        boolean hasCategory = actionsAvailable
-                && selected != null
-                && selected.isDatabaseCategory();
-        boolean rootSelected = hasCategory
-                && allRootEntries.stream().anyMatch(entry -> selected.getCategoryId().equals(
-                entry.getCategoryId()
-        ));
+        OrbitEntry selected = selectedEntryOrNull();
+        boolean hasSelection = selected != null
+                && (selected.isDatabaseCategory() || selected.isDatabaseShortcut());
+        boolean selectedCategory = selected != null && selected.isDatabaseCategory();
+        boolean atRoot = navigation.isAtRoot();
+        boolean insideCategory = navigation.getCurrentCategoryId() != null;
 
-        createButton.setDisable(!actionsAvailable);
-        editButton.setDisable(!hasCategory);
-        moveButton.setDisable(!hasCategory);
-        upButton.setDisable(!hasCategory);
-        downButton.setDisable(!hasCategory);
-        deleteButton.setDisable(!hasCategory);
-        pinButton.setDisable(!rootSelected);
-        refreshButton.setDisable(!actionsAvailable);
-        showAllButton.setDisable(!actionsAvailable || !navigation.isAtRoot());
+        showAllButton.setDisable(busy || !atRoot);
         showAllButton.setText(showAllRootCategories ? "★" : "Все");
-        showAllButton.setAccessibleText(
-                showAllRootCategories
+        Tooltip.install(
+                showAllButton,
+                new Tooltip(showAllRootCategories
                         ? "Показать только закреплённые категории"
-                        : "Показать все корневые категории"
+                        : "Показать все корневые категории")
         );
-        if (selected != null && selected.isRootPinned()) {
-            pinButton.setText("☆");
-            pinButton.setAccessibleText("Открепить корневую категорию");
-        } else {
-            pinButton.setText("★");
-            pinButton.setAccessibleText("Закрепить корневую категорию");
+
+        createCategoryButton.setDisable(busy || categoryActions == null);
+        createShortcutButton.setDisable(
+                busy || categoryActions == null || !insideCategory
+        );
+        editButton.setDisable(busy || !hasSelection);
+        moveButton.setDisable(busy || !hasSelection);
+        upButton.setDisable(busy || !hasSelection);
+        downButton.setDisable(busy || !hasSelection);
+        pinButton.setDisable(busy || !selectedCategory || !atRoot);
+        deleteButton.setDisable(busy || !hasSelection);
+        refreshButton.setDisable(busy || categoryActions == null);
+    }
+
+    private int totalPages() {
+        int count = navigation.getCurrentEntries().size();
+        return Math.max(1, (count + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    private List<OrbitEntry> getActiveRootEntries() {
+        return showAllRootCategories ? allRootEntries : pinnedRootEntries;
+    }
+
+    private void removeVisibleItems() {
+        getChildren().removeAll(visibleItems);
+        visibleItems.clear();
+        for (int i = 0; i < PAGE_SIZE; i++) {
+            connectorGlowLines[i].setVisible(false);
+            connectorLines[i].setVisible(false);
+            anchorNodes[i].setVisible(false);
         }
-        updatePagingControls();
-    }
-
-    private int getPageCount() {
-        int size = navigation.getCurrentEntries().size();
-        return Math.max(1, (int) Math.ceil(size / (double) PAGE_SIZE));
-    }
-
-    private int clampPageIndex(int requestedIndex) {
-        return Math.max(0, Math.min(requestedIndex, getPageCount() - 1));
     }
 
     @Override
@@ -551,21 +687,28 @@ public final class CircularMenuPane extends Pane {
             return;
         }
 
-        double size = Math.max(320, Math.min(width, height));
         double centerX = width / 2.0;
-        double centerY = height / 2.0 - clamp(size * 0.025, 8, 22);
-        double radius = clamp(size * 0.355, 150, size * 0.405);
-        double itemWidth = clamp(size * 0.128, 80, 116);
-        double itemHeight = clamp(size * 0.108, 70, 94);
-        double crystalSize = clamp(size * 0.40, 190, 350);
+        double toolbarHeight = Math.max(46, toolBar.prefHeight(-1));
+        double reservedBottom = toolbarHeight + 78;
+        double usableHeight = Math.max(320, height - reservedBottom);
+        double centerY = Math.max(usableHeight * 0.50, 190);
+        double base = Math.min(width, usableHeight);
+        double radius = clamp(base * 0.36, 190, 390);
+        double itemScale = clamp(base / 850.0, 0.82, 1.08);
+        double itemWidth = 112 * itemScale;
+        double itemHeight = 96 * itemScale;
+        double crystalSize = clamp(radius * 0.83, 170, 310);
 
-        layoutCircle(orbitBackdrop, centerX, centerY, size * 0.455);
-        layoutCircle(outerGlowRing, centerX, centerY, size * 0.438);
-        layoutCircle(outerRing, centerX, centerY, size * 0.425);
-        layoutCircle(middleRing, centerX, centerY, size * 0.340);
-        layoutCircle(innerRing, centerX, centerY, size * 0.258);
-        layoutCircle(coreRing, centerX, centerY, size * 0.178);
-        layoutTicks(centerX, centerY, size * 0.402, size * 0.435);
+        orbitBackdrop.setCenterX(centerX);
+        orbitBackdrop.setCenterY(centerY);
+        orbitBackdrop.setRadius(radius * 1.13);
+        setRing(outerGlowRing, centerX, centerY, radius * 1.04);
+        setRing(outerRing, centerX, centerY, radius);
+        setRing(middleRing, centerX, centerY, radius * 0.82);
+        setRing(innerRing, centerX, centerY, radius * 0.63);
+        setRing(coreRing, centerX, centerY, radius * 0.44);
+
+        layoutTicks(centerX, centerY, radius);
 
         commandCrystal.resizeRelocate(
                 centerX - crystalSize / 2.0,
@@ -577,15 +720,21 @@ public final class CircularMenuPane extends Pane {
         int itemCount = visibleItems.size();
         double angleStep = itemCount == 0 ? 0 : 360.0 / itemCount;
         double startAngle = -90.0;
-        updateConnectorVisibility(itemCount);
+        double connectorStartRadius = crystalSize * 0.40;
+        double itemRadius = radius;
 
-        for (int i = 0; i < itemCount; i++) {
+        for (int i = 0; i < PAGE_SIZE; i++) {
+            boolean visible = i < itemCount;
+            connectorGlowLines[i].setVisible(visible);
+            connectorLines[i].setVisible(visible);
+            anchorNodes[i].setVisible(visible);
+            if (!visible) {
+                continue;
+            }
+
             double angle = Math.toRadians(startAngle + i * angleStep);
-            double directionX = Math.cos(angle);
-            double directionY = Math.sin(angle);
-            double itemCenterX = centerX + radius * directionX;
-            double itemCenterY = centerY + radius * directionY;
-
+            double itemCenterX = centerX + Math.cos(angle) * itemRadius;
+            double itemCenterY = centerY + Math.sin(angle) * itemRadius;
             OrbitItemView item = visibleItems.get(i);
             item.setPrefSize(itemWidth, itemHeight);
             item.setMinSize(itemWidth, itemHeight);
@@ -597,129 +746,79 @@ public final class CircularMenuPane extends Pane {
                     itemHeight
             );
 
-            double lineStartRadius = crystalSize * 0.325;
-            double lineEndRadius = radius - Math.min(itemWidth, itemHeight) * 0.52;
-            double startX = centerX + directionX * lineStartRadius;
-            double startY = centerY + directionY * lineStartRadius;
-            double endX = centerX + directionX * lineEndRadius;
-            double endY = centerY + directionY * lineEndRadius;
-            layoutLine(connectorGlowLines[i], startX, startY, endX, endY);
-            layoutLine(connectorLines[i], startX, startY, endX, endY);
-
-            Circle anchor = anchorNodes[i];
-            anchor.setCenterX(endX);
-            anchor.setCenterY(endY);
-            anchor.setRadius(clamp(size * 0.006, 3.2, 5.2));
+            double startX = centerX + Math.cos(angle) * connectorStartRadius;
+            double startY = centerY + Math.sin(angle) * connectorStartRadius;
+            double endRadius = itemRadius - Math.min(itemWidth, itemHeight) * 0.52;
+            double endX = centerX + Math.cos(angle) * endRadius;
+            double endY = centerY + Math.sin(angle) * endRadius;
+            setLine(connectorGlowLines[i], startX, startY, endX, endY);
+            setLine(connectorLines[i], startX, startY, endX, endY);
+            anchorNodes[i].setCenterX(endX);
+            anchorNodes[i].setCenterY(endY);
+            anchorNodes[i].setRadius(clamp(base * 0.006, 3.3, 5.2));
         }
 
-        layoutPagingControls(centerX, centerY, radius, itemHeight, size);
+        double breadcrumbWidth = Math.min(width * 0.76, 720);
         breadcrumbLabel.resizeRelocate(
-                Math.max(0, centerX - crystalSize),
-                Math.max(0, centerY - radius - itemHeight * 0.95),
-                crystalSize * 2.0,
-                30
+                centerX - breadcrumbWidth / 2.0,
+                12,
+                breadcrumbWidth,
+                28
         );
 
-        double toolbarWidth = Math.min(width - 30, 560);
-        double toolbarHeight = 48;
-        toolBar.resizeRelocate(
-                centerX - toolbarWidth / 2.0,
-                Math.min(height - toolbarHeight - 10, centerY + radius + itemHeight * 1.28),
-                toolbarWidth,
-                toolbarHeight
-        );
-        toolBar.layout();
-
-        statusLabel.resizeRelocate(
-                Math.max(10, centerX - Math.min(width * 0.38, 360)),
-                Math.min(height - 27, toolBar.getLayoutY() + toolbarHeight + 2),
-                Math.min(width * 0.76, 720),
-                24
-        );
-    }
-
-    private void layoutTicks(
-            double centerX,
-            double centerY,
-            double innerRadius,
-            double outerRadius
-    ) {
-        for (int i = 0; i < tickLines.length; i++) {
-            double angle = Math.toRadians(-90.0 + i * (360.0 / tickLines.length));
-            boolean major = i % 4 == 0;
-            double tickInnerRadius = major ? innerRadius - 4.0 : innerRadius;
-            double tickOuterRadius = major ? outerRadius + 3.0 : outerRadius;
-            Line tick = tickLines[i];
-            tick.setStartX(centerX + Math.cos(angle) * tickInnerRadius);
-            tick.setStartY(centerY + Math.sin(angle) * tickInnerRadius);
-            tick.setEndX(centerX + Math.cos(angle) * tickOuterRadius);
-            tick.setEndY(centerY + Math.sin(angle) * tickOuterRadius);
-        }
-    }
-
-    private void updateConnectorVisibility(int itemCount) {
-        for (int i = 0; i < PAGE_SIZE; i++) {
-            boolean visible = i < itemCount;
-            connectorGlowLines[i].setVisible(visible);
-            connectorLines[i].setVisible(visible);
-            anchorNodes[i].setVisible(visible);
-        }
-    }
-
-    private void layoutPagingControls(
-            double centerX,
-            double centerY,
-            double radius,
-            double itemHeight,
-            double size
-    ) {
-        double pageButtonSize = clamp(size * 0.056, 36, 48);
-        double controlsY = centerY + radius + itemHeight * 0.58;
-        pageIndicator.autosize();
-        double indicatorWidth = Math.max(58, pageIndicator.getWidth());
-        double gap = 12;
+        double pageY = Math.min(height - toolbarHeight - 66, centerY + radius + itemHeight * 0.57);
+        double pageButtonSize = 42;
         previousPageButton.resizeRelocate(
-                centerX - indicatorWidth / 2.0 - gap - pageButtonSize,
-                controlsY,
+                centerX - 82,
+                pageY,
                 pageButtonSize,
                 pageButtonSize
         );
         nextPageButton.resizeRelocate(
-                centerX + indicatorWidth / 2.0 + gap,
-                controlsY,
+                centerX + 40,
+                pageY,
                 pageButtonSize,
                 pageButtonSize
         );
-        pageIndicator.autosize();
-        pageIndicator.relocate(
-                centerX - pageIndicator.getWidth() / 2.0,
-                controlsY + pageButtonSize / 2.0 - pageIndicator.getHeight() / 2.0
+        pageIndicator.resizeRelocate(
+                centerX - 37,
+                pageY + 7,
+                74,
+                28
         );
+
+        double toolbarWidth = Math.min(width - 24, Math.max(560, toolBar.prefWidth(-1)));
+        toolBar.resizeRelocate(
+                centerX - toolbarWidth / 2.0,
+                height - toolbarHeight - 10,
+                toolbarWidth,
+                toolbarHeight
+        );
+
+        if (statusLabel.isVisible()) {
+            double statusWidth = Math.min(width * 0.72, 560);
+            statusLabel.resizeRelocate(
+                    centerX - statusWidth / 2.0,
+                    height - toolbarHeight - 43,
+                    statusWidth,
+                    26
+            );
+        }
     }
 
-    private Button createPageButton(String text, String accessibleText) {
-        Button button = new Button(text);
-        button.getStyleClass().add("orbit-page-button");
-        button.setFocusTraversable(true);
-        button.setAccessibleText(accessibleText);
-        consumeSecondaryClicks(button);
-        return button;
-    }
-
-    private Button createToolButton(String text, String tooltipText) {
-        Button button = new Button(text);
-        button.getStyleClass().add("orbit-tool-button");
-        button.setFocusTraversable(true);
-        button.setAccessibleText(tooltipText);
-        Tooltip.install(button, new Tooltip(tooltipText));
-        consumeSecondaryClicks(button);
-        return button;
-    }
-
-    private Circle createRing(String modifierStyleClass) {
-        Circle ring = createCircle("orbit-ring");
-        ring.getStyleClass().add(modifierStyleClass);
-        return ring;
+    private void layoutTicks(double centerX, double centerY, double radius) {
+        for (int i = 0; i < tickLines.length; i++) {
+            double angle = Math.toRadians(-90 + i * (360.0 / TICK_COUNT));
+            double inner = radius * (i % 4 == 0 ? 0.94 : 0.965);
+            double outer = radius * 1.035;
+            setLine(
+                    tickLines[i],
+                    centerX + Math.cos(angle) * inner,
+                    centerY + Math.sin(angle) * inner,
+                    centerX + Math.cos(angle) * outer,
+                    centerY + Math.sin(angle) * outer
+            );
+        }
     }
 
     private Circle createCircle(String styleClass) {
@@ -729,13 +828,42 @@ public final class CircularMenuPane extends Pane {
         return circle;
     }
 
-    private void layoutCircle(Circle circle, double centerX, double centerY, double radius) {
+    private Circle createRing(String styleClass) {
+        Circle circle = createCircle("orbit-ring");
+        circle.getStyleClass().add(styleClass);
+        circle.setFill(Color.TRANSPARENT);
+        return circle;
+    }
+
+    private Button createPageButton(String text, String tooltip) {
+        Button button = new Button(text);
+        button.getStyleClass().add("orbit-page-button");
+        button.setTooltip(new Tooltip(tooltip));
+        button.setFocusTraversable(true);
+        return button;
+    }
+
+    private Button createToolButton(String text, String tooltip) {
+        Button button = new Button(text);
+        button.getStyleClass().add("orbit-tool-button");
+        button.setTooltip(new Tooltip(tooltip));
+        button.setFocusTraversable(true);
+        return button;
+    }
+
+    private void setRing(Circle circle, double centerX, double centerY, double radius) {
         circle.setCenterX(centerX);
         circle.setCenterY(centerY);
         circle.setRadius(radius);
     }
 
-    private void layoutLine(Line line, double startX, double startY, double endX, double endY) {
+    private void setLine(
+            Line line,
+            double startX,
+            double startY,
+            double endX,
+            double endY
+    ) {
         line.setStartX(startX);
         line.setStartY(startY);
         line.setEndX(endX);

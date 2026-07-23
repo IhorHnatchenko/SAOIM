@@ -11,7 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
-/** Profile screen: profile card, database categories and modal dialog layer. */
+/** Profile screen: profile card, mixed orbit data and modal editor layer. */
 public final class ProfileView extends Pane {
     private static final double MIN_MARGIN = 18;
     private static final double DEFAULT_MARGIN = 30;
@@ -25,32 +25,27 @@ public final class ProfileView extends Pane {
     private final CategoryDialogLayer dialogLayer = new CategoryDialogLayer();
     private final ProfileRepository profileRepository = new ProfileRepository();
     private final CategoryService categoryService = new CategoryService();
+    private final ShortcutService shortcutService = new ShortcutService();
 
     private UserSession session = UserSession.guest();
     private UserProfile profile = UserProfile.starter("Guest");
-    private CategorySnapshot categorySnapshot = new CategorySnapshot(
-            -1,
-            List.of(),
-            List.of(),
-            List.of()
-    );
-
+    private CategorySnapshot categorySnapshot = emptySnapshot(-1);
     private Task<UserProfile> activeProfileTask;
-    private Task<CategorySnapshot> activeCategoryTask;
+    private Task<CategorySnapshot> activeDataTask;
     private long profileLoadGeneration;
-    private long categoryLoadGeneration;
+    private long dataLoadGeneration;
 
     public ProfileView() {
         getStyleClass().add("profile-view");
         setPickOnBounds(false);
-
         loadStylesheet("/org/example/profile-view.css");
         loadStylesheet("/org/example/category-view.css");
+        loadStylesheet("/org/example/shortcut-view.css");
 
         getChildren().addAll(profileCard, orbitPane, dialogLayer);
         profileCard.setProfile(profile);
         consumeSecondaryClicks(profileCard);
-        configureCategoryActions();
+        configureOrbitActions();
     }
 
     /** Compatibility method for older callers. */
@@ -66,19 +61,15 @@ public final class ProfileView extends Pane {
         if (!this.session.isAuthenticated()) {
             cancelProfileLoad();
             setProfile(UserProfile.starter(this.session.getUsername()));
-            categorySnapshot = new CategorySnapshot(-1, List.of(), List.of(), List.of());
+            categorySnapshot = emptySnapshot(-1);
             orbitPane.setCategoryData(List.of(), List.of(), List.of(), true);
         } else if (accountChanged) {
+            cancelProfileLoad();
             setProfile(UserProfile.starter(
                     this.session.getAccountId(),
                     this.session.getUsername()
             ));
-            categorySnapshot = new CategorySnapshot(
-                    this.session.getAccountId(),
-                    List.of(),
-                    List.of(),
-                    List.of()
-            );
+            categorySnapshot = emptySnapshot(this.session.getAccountId());
             orbitPane.setCategoryData(List.of(), List.of(), List.of(), true);
         }
     }
@@ -87,7 +78,7 @@ public final class ProfileView extends Pane {
         return session;
     }
 
-    /** Loads profile and categories outside the JavaFX Application Thread. */
+    /** Loads profile, categories and shortcuts outside JavaFX Application Thread. */
     public void loadProfileAsync(UserSession requestedSession) {
         setSession(requestedSession);
         if (!session.isAuthenticated()) {
@@ -128,9 +119,7 @@ public final class ProfileView extends Pane {
             activeProfileTask = null;
             System.err.println(
                     "[Profile] Не удалось загрузить профиль accountId="
-                            + accountId
-                            + ": "
-                            + messageFrom(exception)
+                            + accountId + ": " + messageFrom(exception)
             );
         });
         task.setOnCancelled(event -> {
@@ -146,15 +135,16 @@ public final class ProfileView extends Pane {
         if (!session.isAuthenticated()) {
             return;
         }
-        cancelCategoryTask();
-        long generation = ++categoryLoadGeneration;
+        cancelDataTask();
+        long generation = ++dataLoadGeneration;
         long accountId = session.getAccountId();
         List<Long> path = preserveNavigation
                 ? orbitPane.getNavigationPathCategoryIds()
                 : List.of();
-        boolean showAllRoots = preserveNavigation && orbitPane.isShowingAllRootCategories();
-        orbitPane.setBusy(true, "Загрузка категорий…");
+        boolean showAllRoots = preserveNavigation
+                && orbitPane.isShowingAllRootCategories();
 
+        orbitPane.setBusy(true, "Загрузка категорий и ярлыков…");
         Task<CategorySnapshot> task = new Task<>() {
             @Override
             protected CategorySnapshot call() throws Exception {
@@ -162,45 +152,47 @@ public final class ProfileView extends Pane {
             }
         };
         task.setOnSucceeded(event -> {
-            if (generation != categoryLoadGeneration || accountId != session.getAccountId()) {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
                 return;
             }
-            activeCategoryTask = null;
+            activeDataTask = null;
             applyCategorySnapshot(task.getValue(), path, showAllRoots);
             orbitPane.setBusy(false, "");
-            System.out.println("[Categories] Дерево загружено для accountId=" + accountId);
+            System.out.println(
+                    "[Orbit] Загружено: категорий="
+                            + categorySnapshot.getCategories().size()
+                            + ", ярлыков=" + categorySnapshot.getShortcuts().size()
+            );
         });
         task.setOnFailed(event -> {
-            if (generation != categoryLoadGeneration || accountId != session.getAccountId()) {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
                 return;
             }
-            activeCategoryTask = null;
-            orbitPane.setBusy(false, "Категории недоступны");
+            activeDataTask = null;
+            orbitPane.setBusy(false, "Данные орбиты недоступны");
             dialogLayer.showError(
-                    "Не удалось загрузить категории",
+                    "Не удалось загрузить категории и ярлыки",
                     messageFrom(task.getException())
             );
             System.err.println(
-                    "[Categories] Не удалось загрузить дерево accountId="
-                            + accountId
-                            + ": "
-                            + messageFrom(task.getException())
+                    "[Orbit] Не удалось загрузить accountId="
+                            + accountId + ": " + messageFrom(task.getException())
             );
         });
         task.setOnCancelled(event -> {
-            if (activeCategoryTask == task) {
-                activeCategoryTask = null;
+            if (activeDataTask == task) {
+                activeDataTask = null;
             }
         });
-        activeCategoryTask = task;
+        activeDataTask = task;
         DATA_EXECUTOR.execute(task);
     }
 
     public void cancelProfileLoad() {
         profileLoadGeneration++;
-        categoryLoadGeneration++;
+        dataLoadGeneration++;
         cancelProfileTask();
-        cancelCategoryTask();
+        cancelDataTask();
         dialogLayer.close();
     }
 
@@ -231,7 +223,7 @@ public final class ProfileView extends Pane {
         return orbitPane;
     }
 
-    private void configureCategoryActions() {
+    private void configureOrbitActions() {
         orbitPane.setCategoryActions(new CircularMenuPane.CategoryActions() {
             @Override
             public void createCategory(Long parentCategoryId, String parentLabel) {
@@ -239,8 +231,9 @@ public final class ProfileView extends Pane {
                     return;
                 }
                 boolean root = parentCategoryId == null;
-                dialogLayer.showCreate(parentLabel, root, draft -> executeCategoryMutation(
+                dialogLayer.showCreate(parentLabel, root, draft -> executeDataMutation(
                         "Создание категории…",
+                        "Не удалось создать категорию",
                         () -> {
                             categoryService.createCategory(
                                     session.getAccountId(),
@@ -259,8 +252,9 @@ public final class ProfileView extends Pane {
                     showCategoryMissing();
                     return;
                 }
-                dialogLayer.showEdit(category, draft -> executeCategoryMutation(
+                dialogLayer.showEdit(category, draft -> executeDataMutation(
                         "Сохранение категории…",
+                        "Не удалось изменить категорию",
                         () -> {
                             categoryService.updateCategory(
                                     session.getAccountId(),
@@ -283,8 +277,9 @@ public final class ProfileView extends Pane {
                         categorySnapshot,
                         categoryId
                 );
-                dialogLayer.showMove(category, targets, newParentId -> executeCategoryMutation(
+                dialogLayer.showMove(category, targets, newParentId -> executeDataMutation(
                         "Перемещение категории…",
+                        "Не удалось переместить категорию",
                         () -> {
                             categoryService.moveCategory(
                                     session.getAccountId(),
@@ -298,8 +293,9 @@ public final class ProfileView extends Pane {
 
             @Override
             public void moveCategoryUp(long categoryId) {
-                executeCategoryMutation(
-                        "Изменение порядка…",
+                executeDataMutation(
+                        "Изменение общего порядка…",
+                        "Не удалось изменить порядок",
                         () -> {
                             categoryService.moveRelative(
                                     session.getAccountId(),
@@ -313,8 +309,9 @@ public final class ProfileView extends Pane {
 
             @Override
             public void moveCategoryDown(long categoryId) {
-                executeCategoryMutation(
-                        "Изменение порядка…",
+                executeDataMutation(
+                        "Изменение общего порядка…",
+                        "Не удалось изменить порядок",
                         () -> {
                             categoryService.moveRelative(
                                     session.getAccountId(),
@@ -328,10 +325,14 @@ public final class ProfileView extends Pane {
 
             @Override
             public void togglePinned(long categoryId) {
-                executeCategoryMutation(
+                executeDataMutation(
                         "Обновление главной орбиты…",
+                        "Не удалось изменить закрепление",
                         () -> {
-                            categoryService.togglePinned(session.getAccountId(), categoryId);
+                            categoryService.togglePinned(
+                                    session.getAccountId(),
+                                    categoryId
+                            );
                             return null;
                         }
                 );
@@ -344,48 +345,202 @@ public final class ProfileView extends Pane {
                     showCategoryMissing();
                     return;
                 }
-                int subtreeSize;
+                int categoryCount;
+                int shortcutCount;
                 try {
-                    subtreeSize = categoryService.countSubtree(categorySnapshot, categoryId);
+                    categoryCount = categoryService.countSubtree(
+                            categorySnapshot,
+                            categoryId
+                    );
+                    shortcutCount = categoryService.countShortcutsInSubtree(
+                            categorySnapshot,
+                            categoryId
+                    );
                 } catch (RuntimeException exception) {
                     dialogLayer.showError("Ошибка дерева", exception.getMessage());
                     return;
                 }
-                dialogLayer.showDelete(category, subtreeSize, () -> executeCategoryMutation(
-                        "Удаление поддерева…",
-                        () -> {
-                            String batchId = categoryService.softDeleteSubtree(
-                                    session.getAccountId(),
-                                    categoryId
-                            );
-                            System.out.println("[Categories] deletionBatchId=" + batchId);
-                            return null;
-                        }
-                ));
+                dialogLayer.showDelete(
+                        category,
+                        categoryCount,
+                        shortcutCount,
+                        () -> executeDataMutation(
+                                "Удаление поддерева…",
+                                "Не удалось удалить категорию",
+                                () -> {
+                                    String batchId = categoryService.softDeleteSubtree(
+                                            session.getAccountId(),
+                                            categoryId
+                                    );
+                                    System.out.println(
+                                            "[Categories] deletionBatchId=" + batchId
+                                    );
+                                    return null;
+                                }
+                        )
+                );
             }
 
             @Override
             public void refreshCategories() {
                 loadCategoriesAsync(true);
             }
+
+            @Override
+            public void createShortcut(long categoryId, String categoryLabel) {
+                if (!ensureAuthenticated()) {
+                    return;
+                }
+                if (categorySnapshot.find(categoryId) == null) {
+                    showCategoryMissing();
+                    return;
+                }
+                dialogLayer.showCreateShortcut(
+                        categoryLabel,
+                        draft -> executeDataMutation(
+                                "Создание ярлыка…",
+                                "Не удалось создать ярлык",
+                                () -> {
+                                    shortcutService.createShortcut(
+                                            session.getAccountId(),
+                                            categoryId,
+                                            draft
+                                    );
+                                    return null;
+                                }
+                        )
+                );
+            }
+
+            @Override
+            public void editShortcut(long shortcutId) {
+                AppShortcut shortcut = categorySnapshot.findShortcut(shortcutId);
+                if (shortcut == null) {
+                    showShortcutMissing();
+                    return;
+                }
+                dialogLayer.showEditShortcut(
+                        shortcut,
+                        draft -> executeDataMutation(
+                                "Сохранение ярлыка…",
+                                "Не удалось изменить ярлык",
+                                () -> {
+                                    shortcutService.updateShortcut(
+                                            session.getAccountId(),
+                                            shortcutId,
+                                            draft
+                                    );
+                                    return null;
+                                }
+                        )
+                );
+            }
+
+            @Override
+            public void moveShortcut(long shortcutId) {
+                AppShortcut shortcut = categorySnapshot.findShortcut(shortcutId);
+                if (shortcut == null) {
+                    showShortcutMissing();
+                    return;
+                }
+                List<ShortcutMoveTarget> targets = shortcutService.getMoveTargets(
+                        categorySnapshot,
+                        shortcutId
+                );
+                dialogLayer.showMoveShortcut(
+                        shortcut,
+                        targets,
+                        categoryId -> executeDataMutation(
+                                "Перемещение ярлыка…",
+                                "Не удалось переместить ярлык",
+                                () -> {
+                                    shortcutService.moveShortcut(
+                                            session.getAccountId(),
+                                            shortcutId,
+                                            categoryId
+                                    );
+                                    return null;
+                                }
+                        )
+                );
+            }
+
+            @Override
+            public void moveShortcutUp(long shortcutId) {
+                executeDataMutation(
+                        "Изменение общего порядка…",
+                        "Не удалось изменить порядок",
+                        () -> {
+                            shortcutService.moveRelative(
+                                    session.getAccountId(),
+                                    shortcutId,
+                                    -1
+                            );
+                            return null;
+                        }
+                );
+            }
+
+            @Override
+            public void moveShortcutDown(long shortcutId) {
+                executeDataMutation(
+                        "Изменение общего порядка…",
+                        "Не удалось изменить порядок",
+                        () -> {
+                            shortcutService.moveRelative(
+                                    session.getAccountId(),
+                                    shortcutId,
+                                    1
+                            );
+                            return null;
+                        }
+                );
+            }
+
+            @Override
+            public void deleteShortcut(long shortcutId) {
+                AppShortcut shortcut = categorySnapshot.findShortcut(shortcutId);
+                if (shortcut == null) {
+                    showShortcutMissing();
+                    return;
+                }
+                dialogLayer.showDeleteShortcut(
+                        shortcut,
+                        () -> executeDataMutation(
+                                "Удаление ярлыка…",
+                                "Не удалось удалить ярлык",
+                                () -> {
+                                    String batchId = shortcutService.softDeleteShortcut(
+                                            session.getAccountId(),
+                                            shortcutId
+                                    );
+                                    System.out.println(
+                                            "[Shortcuts] deletionBatchId=" + batchId
+                                    );
+                                    return null;
+                                }
+                        )
+                );
+            }
         });
     }
 
-    private void executeCategoryMutation(
+    private void executeDataMutation(
             String busyMessage,
+            String errorTitle,
             Callable<Void> operation
     ) {
         if (!ensureAuthenticated()) {
             return;
         }
-        cancelCategoryTask();
-        long generation = ++categoryLoadGeneration;
+        cancelDataTask();
+        long generation = ++dataLoadGeneration;
         long accountId = session.getAccountId();
         List<Long> preferredPath = orbitPane.getNavigationPathCategoryIds();
         boolean showAllRoots = orbitPane.isShowingAllRootCategories();
+
         dialogLayer.showBusy(busyMessage);
         orbitPane.setBusy(true, busyMessage);
-
         Task<CategorySnapshot> task = new Task<>() {
             @Override
             protected CategorySnapshot call() throws Exception {
@@ -394,29 +549,29 @@ public final class ProfileView extends Pane {
             }
         };
         task.setOnSucceeded(event -> {
-            if (generation != categoryLoadGeneration || accountId != session.getAccountId()) {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
                 return;
             }
-            activeCategoryTask = null;
+            activeDataTask = null;
             dialogLayer.close();
             applyCategorySnapshot(task.getValue(), preferredPath, showAllRoots);
             orbitPane.setBusy(false, "Изменения сохранены");
         });
         task.setOnFailed(event -> {
-            if (generation != categoryLoadGeneration || accountId != session.getAccountId()) {
+            if (generation != dataLoadGeneration || accountId != session.getAccountId()) {
                 return;
             }
-            activeCategoryTask = null;
+            activeDataTask = null;
             orbitPane.setBusy(false, "Операция не выполнена");
-            dialogLayer.showError("Не удалось изменить категорию", messageFrom(task.getException()));
-            System.err.println("[Categories] Ошибка операции: " + messageFrom(task.getException()));
+            dialogLayer.showError(errorTitle, messageFrom(task.getException()));
+            System.err.println("[Orbit] Ошибка операции: " + messageFrom(task.getException()));
         });
         task.setOnCancelled(event -> {
-            if (activeCategoryTask == task) {
-                activeCategoryTask = null;
+            if (activeDataTask == task) {
+                activeDataTask = null;
             }
         });
-        activeCategoryTask = task;
+        activeDataTask = task;
         DATA_EXECUTOR.execute(task);
     }
 
@@ -426,7 +581,7 @@ public final class ProfileView extends Pane {
             boolean showAllRoots
     ) {
         categorySnapshot = snapshot == null
-                ? new CategorySnapshot(session.getAccountId(), List.of(), List.of(), List.of())
+                ? emptySnapshot(session.getAccountId())
                 : snapshot;
         orbitPane.setCategoryData(
                 categorySnapshot.getPinnedRootEntries(),
@@ -442,7 +597,7 @@ public final class ProfileView extends Pane {
         }
         dialogLayer.showError(
                 "Требуется вход",
-                "Управление категориями доступно только авторизованному пользователю."
+                "Управление категориями и ярлыками доступно только авторизованному пользователю."
         );
         return false;
     }
@@ -450,7 +605,14 @@ public final class ProfileView extends Pane {
     private void showCategoryMissing() {
         dialogLayer.showError(
                 "Категория не найдена",
-                "Данные могли измениться. Нажмите ↻, чтобы обновить дерево."
+                "Данные могли измениться. Нажмите ↻, чтобы обновить орбиту."
+        );
+    }
+
+    private void showShortcutMissing() {
+        dialogLayer.showError(
+                "Ярлык не найден",
+                "Данные могли измениться. Нажмите ↻, чтобы обновить орбиту."
         );
     }
 
@@ -461,10 +623,10 @@ public final class ProfileView extends Pane {
         }
     }
 
-    private void cancelCategoryTask() {
-        if (activeCategoryTask != null) {
-            activeCategoryTask.cancel(true);
-            activeCategoryTask = null;
+    private void cancelDataTask() {
+        if (activeDataTask != null) {
+            activeDataTask.cancel(true);
+            activeDataTask = null;
         }
     }
 
@@ -534,13 +696,24 @@ public final class ProfileView extends Pane {
             return "Неизвестная ошибка";
         }
         Throwable current = throwable;
-        while (current.getCause() != null && current.getMessage() == null) {
+        while (current.getCause() != null
+                && (current.getMessage() == null || current.getMessage().isBlank())) {
             current = current.getCause();
         }
         String message = current.getMessage();
         return message == null || message.isBlank()
                 ? current.getClass().getSimpleName()
                 : message;
+    }
+
+    private CategorySnapshot emptySnapshot(long accountId) {
+        return new CategorySnapshot(
+                accountId,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
     }
 
     private double clamp(double value, double min, double max) {
@@ -552,7 +725,10 @@ public final class ProfileView extends Pane {
 
         @Override
         public Thread newThread(Runnable runnable) {
-            Thread thread = new Thread(runnable, "saoim-data-loader-" + (++counter));
+            Thread thread = new Thread(
+                    runnable,
+                    "saoim-data-loader-" + (++counter)
+            );
             thread.setDaemon(true);
             return thread;
         }

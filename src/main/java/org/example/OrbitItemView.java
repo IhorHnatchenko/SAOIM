@@ -11,12 +11,14 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-/** One interactive entry on the circular orbit. */
+/** One interactive category or shortcut on the circular orbit. */
 public final class OrbitItemView extends StackPane {
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
     private static final PseudoClass CATEGORY = PseudoClass.getPseudoClass("category");
     private static final PseudoClass LEAF = PseudoClass.getPseudoClass("leaf");
     private static final PseudoClass PINNED = PseudoClass.getPseudoClass("pinned");
+    private static final PseudoClass SHORTCUT = PseudoClass.getPseudoClass("shortcut");
+    private static final PseudoClass UNAVAILABLE = PseudoClass.getPseudoClass("unavailable");
 
     private final OrbitEntry entry;
 
@@ -29,6 +31,8 @@ public final class OrbitItemView extends StackPane {
         pseudoClassStateChanged(CATEGORY, this.entry.isCategory());
         pseudoClassStateChanged(LEAF, !this.entry.isCategory());
         pseudoClassStateChanged(PINNED, this.entry.isRootPinned());
+        pseudoClassStateChanged(SHORTCUT, this.entry.isShortcut());
+        pseudoClassStateChanged(UNAVAILABLE, this.entry.isShortcut() && !this.entry.isEnabled());
 
         setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         setPrefSize(112, 96);
@@ -46,15 +50,7 @@ public final class OrbitItemView extends StackPane {
         titleLabel.setWrapText(false);
         titleLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
 
-        String marker;
-        if (this.entry.isRootPinned()) {
-            marker = "★ ЗАКРЕПЛЕНА";
-        } else if (this.entry.isCategory()) {
-            marker = "ДВОЙНОЙ КЛИК";
-        } else {
-            marker = "ВЫБРАТЬ";
-        }
-        Label markerLabel = new Label(marker);
+        Label markerLabel = new Label(markerText(this.entry));
         markerLabel.getStyleClass().add("orbit-item__marker");
 
         VBox content = new VBox(4, iconLabel, titleLabel, markerLabel);
@@ -62,17 +58,7 @@ public final class OrbitItemView extends StackPane {
         content.setMouseTransparent(true);
         getChildren().add(content);
 
-        Tooltip.install(
-                this,
-                new Tooltip(
-                        this.entry.getTitle()
-                                + "\n"
-                                + this.entry.getDescription()
-                                + (this.entry.isCategory()
-                                ? "\nДвойной клик или Enter — открыть"
-                                : "")
-                )
-        );
+        Tooltip.install(this, new Tooltip(tooltipText(this.entry)));
         consumeSecondaryClicks();
     }
 
@@ -95,6 +81,37 @@ public final class OrbitItemView extends StackPane {
 
     public void setSelected(boolean selected) {
         pseudoClassStateChanged(SELECTED, selected);
+    }
+
+    private String markerText(OrbitEntry entry) {
+        if (entry.isRootPinned()) {
+            return "★ ЗАКРЕПЛЕНА";
+        }
+        if (entry.isCategory()) {
+            return "ДВОЙНОЙ КЛИК";
+        }
+        if (entry.isShortcut()) {
+            if (!entry.isEnabled()) {
+                return "ОТКЛЮЧЁН";
+            }
+            LaunchType type = entry.getLaunchType();
+            return type == null ? "ЯРЛЫК" : type.name();
+        }
+        return "ВЫБРАТЬ";
+    }
+
+    private String tooltipText(OrbitEntry entry) {
+        StringBuilder builder = new StringBuilder()
+                .append(entry.getTitle())
+                .append('\n')
+                .append(entry.getDescription());
+        if (entry.isCategory()) {
+            builder.append("\nДвойной клик или Enter — открыть");
+        } else if (entry.isShortcut()) {
+            builder.append("\nЗапуск будет подключён на этапе 8")
+                    .append("\nF2 — изменить, Delete — удалить");
+        }
+        return builder.toString();
     }
 
     private void consumeSecondaryClicks() {

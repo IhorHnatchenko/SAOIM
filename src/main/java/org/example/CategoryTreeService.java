@@ -12,31 +12,67 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Builds the tree and protects category moves from cycles. */
+/** Builds the category tree, injects shortcuts and protects moves from cycles. */
 public final class CategoryTreeService {
     private static final Comparator<AppCategory> CATEGORY_ORDER = Comparator
             .comparingInt(AppCategory::getSortOrder)
             .thenComparingLong(AppCategory::getId);
 
-    public CategorySnapshot buildSnapshot(long accountId, List<AppCategory> categories) {
-        List<AppCategory> safe = categories == null ? List.of() : List.copyOf(categories);
-        validateTree(accountId, safe);
+    private static final Comparator<OrbitEntry> ORBIT_ORDER = Comparator
+            .comparingInt(OrbitEntry::getSortOrder)
+            .thenComparingInt(entry -> entry.isCategory() ? 0 : 1)
+            .thenComparing(OrbitEntry::getId);
 
-        Map<Long, List<AppCategory>> childrenByParent = groupChildren(safe);
-        List<AppCategory> roots = safe.stream()
+    /** Compatibility overload for code that only loads categories. */
+    public CategorySnapshot buildSnapshot(long accountId, List<AppCategory> categories) {
+        return buildSnapshot(accountId, categories, List.of());
+    }
+
+    public CategorySnapshot buildSnapshot(
+            long accountId,
+            List<AppCategory> categories,
+            List<AppShortcut> shortcuts
+    ) {
+        List<AppCategory> safeCategories = categories == null ? List.of() : List.copyOf(categories);
+        List<AppShortcut> safeShortcuts = shortcuts == null ? List.of() : List.copyOf(shortcuts);
+
+        validateTree(accountId, safeCategories);
+        validateShortcuts(accountId, safeCategories, safeShortcuts);
+
+        Map<Long, List<AppCategory>> childrenByParent = groupChildren(safeCategories);
+        Map<Long, List<AppShortcut>> shortcutsByCategory = groupShortcuts(safeShortcuts);
+
+        List<AppCategory> roots = safeCategories.stream()
                 .filter(AppCategory::isRoot)
                 .sorted(CATEGORY_ORDER)
                 .toList();
 
         List<OrbitEntry> allRoots = roots.stream()
-                .map(category -> toOrbitEntry(category, childrenByParent, new HashSet<>()))
-                .toList();
-        List<OrbitEntry> pinnedRoots = roots.stream()
-                .filter(AppCategory::isRootPinned)
-                .map(category -> toOrbitEntry(category, childrenByParent, new HashSet<>()))
+                .map(category -> toOrbitEntry(
+                        category,
+                        childrenByParent,
+                        shortcutsByCategory,
+                        new HashSet<>()
+                ))
                 .toList();
 
-        return new CategorySnapshot(accountId, safe, pinnedRoots, allRoots);
+        List<OrbitEntry> pinnedRoots = roots.stream()
+                .filter(AppCategory::isRootPinned)
+                .map(category -> toOrbitEntry(
+                        category,
+                        childrenByParent,
+                        shortcutsByCategory,
+                        new HashSet<>()
+                ))
+                .toList();
+
+        return new CategorySnapshot(
+                accountId,
+                safeCategories,
+                safeShortcuts,
+                pinnedRoots,
+                allRoots
+        );
     }
 
     public void validateMove(
@@ -90,16 +126,16 @@ public final class CategoryTreeService {
         }
         Set<Long> forbidden = collectDescendantIds(categories, movingCategoryId);
         forbidden.add(movingCategoryId);
-
         Map<Long, String> paths = buildPaths(categories);
+
         List<CategoryMoveTarget> targets = new ArrayList<>();
         targets.add(new CategoryMoveTarget(null, "Корень категорий"));
         categories.stream()
                 .filter(category -> !forbidden.contains(category.getId()))
-                .sorted(Comparator.comparing(category -> paths.getOrDefault(
-                        category.getId(),
-                        category.getName()
-                ), String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparing(
+                        category -> paths.getOrDefault(category.getId(), category.getName()),
+                        String.CASE_INSENSITIVE_ORDER
+                ))
                 .forEach(category -> targets.add(new CategoryMoveTarget(
                         category.getId(),
                         paths.getOrDefault(category.getId(), category.getName())
@@ -107,7 +143,24 @@ public final class CategoryTreeService {
         return List.copyOf(targets);
     }
 
-    public List<AppCategory> siblingsOf(List<AppCategory> categories, AppCategory category) {
+    public List<ShortcutMoveTarget> buildShortcutMoveTargets(List<AppCategory> categories) {
+        Map<Long, String> paths = buildPaths(categories);
+        return categories.stream()
+                .sorted(Comparator.comparing(
+                        category -> paths.getOrDefault(category.getId(), category.getName()),
+                        String.CASE_INSENSITIVE_ORDER
+                ))
+                .map(category -> new ShortcutMoveTarget(
+                        category.getId(),
+                        paths.getOrDefault(category.getId(), category.getName())
+                ))
+                .toList();
+    }
+
+    public List<AppCategory> siblingsOf(
+            List<AppCategory> categories,
+            AppCategory category
+    ) {
         return categories.stream()
                 .filter(candidate -> sameParent(
                         candidate.getParentCategoryId(),
@@ -120,24 +173,50 @@ public final class CategoryTreeService {
     private OrbitEntry toOrbitEntry(
             AppCategory category,
             Map<Long, List<AppCategory>> childrenByParent,
+            Map<Long, List<AppShortcut>> shortcutsByCategory,
             Set<Long> recursionGuard
     ) {
         if (!recursionGuard.add(category.getId())) {
-            throw new IllegalStateException("Обнаружен цикл категорий возле id=" + category.getId());
+            throw new IllegalStateException(
+                    "Обнаружен цикл категорий возле id=" + category.getId()
+            );
         }
-        List<OrbitEntry> children = childrenByParent
+
+        List<AppCategory> directCategories = childrenByParent
                 .getOrDefault(category.getId(), List.of())
                 .stream()
                 .sorted(CATEGORY_ORDER)
-                .map(child -> toOrbitEntry(child, childrenByParent, new HashSet<>(recursionGuard)))
                 .toList();
+        List<AppShortcut> directShortcuts = shortcutsByCategory
+                .getOrDefault(category.getId(), List.of());
+
+        List<OrbitEntry> children = new ArrayList<>();
+        for (AppCategory child : directCategories) {
+            children.add(toOrbitEntry(
+                    child,
+                    childrenByParent,
+                    shortcutsByCategory,
+                    new HashSet<>(recursionGuard)
+            ));
+        }
+        for (AppShortcut shortcut : directShortcuts) {
+            children.add(OrbitEntry.shortcut(shortcut));
+        }
+        children.sort(ORBIT_ORDER);
+
+        String description;
+        if (children.isEmpty()) {
+            description = "Пустая категория — добавьте подкатегорию или ярлык";
+        } else {
+            description = "Подкатегорий: " + directCategories.size()
+                    + " · ярлыков: " + directShortcuts.size();
+        }
+
         return OrbitEntry.category(
                 category.getId(),
                 category.getName(),
                 category.getIconKey(),
-                children.isEmpty()
-                        ? "Пустая категория — откройте её и добавьте вложенную категорию"
-                        : "Вложенных категорий: " + children.size(),
+                description,
                 category.isRootPinned(),
                 category.getSortOrder(),
                 children
@@ -148,18 +227,43 @@ public final class CategoryTreeService {
         Map<Long, AppCategory> byId = index(categories);
         for (AppCategory category : categories) {
             if (category.getAccountId() != accountId) {
-                throw new IllegalStateException("В дереве обнаружена категория другого аккаунта.");
+                throw new IllegalStateException(
+                        "В дереве обнаружена категория другого аккаунта."
+                );
             }
             Long parentId = category.getParentCategoryId();
             if (parentId != null && !byId.containsKey(parentId)) {
                 throw new IllegalStateException(
-                        "У категории id=" + category.getId() + " отсутствует активный родитель."
+                        "У категории id=" + category.getId()
+                                + " отсутствует активный родитель."
                 );
             }
         }
+
         Map<Long, Integer> colors = new HashMap<>();
         for (AppCategory category : categories) {
             detectCycle(category.getId(), byId, colors);
+        }
+    }
+
+    private void validateShortcuts(
+            long accountId,
+            List<AppCategory> categories,
+            List<AppShortcut> shortcuts
+    ) {
+        Map<Long, AppCategory> categoriesById = index(categories);
+        for (AppShortcut shortcut : shortcuts) {
+            if (shortcut.getAccountId() != accountId) {
+                throw new IllegalStateException(
+                        "В снимке обнаружен ярлык другого аккаунта."
+                );
+            }
+            if (!categoriesById.containsKey(shortcut.getCategoryId())) {
+                throw new IllegalStateException(
+                        "У ярлыка id=" + shortcut.getId()
+                                + " отсутствует активная категория."
+                );
+            }
         }
     }
 
@@ -185,6 +289,9 @@ public final class CategoryTreeService {
 
     private Map<Long, List<AppCategory>> groupChildren(List<AppCategory> categories) {
         Map<Long, List<AppCategory>> result = new LinkedHashMap<>();
+        if (categories == null) {
+            return result;
+        }
         for (AppCategory category : categories) {
             Long parentId = category.getParentCategoryId();
             if (parentId != null) {
@@ -192,6 +299,22 @@ public final class CategoryTreeService {
             }
         }
         result.values().forEach(list -> list.sort(CATEGORY_ORDER));
+        return result;
+    }
+
+    private Map<Long, List<AppShortcut>> groupShortcuts(List<AppShortcut> shortcuts) {
+        Map<Long, List<AppShortcut>> result = new LinkedHashMap<>();
+        if (shortcuts == null) {
+            return result;
+        }
+        for (AppShortcut shortcut : shortcuts) {
+            result.computeIfAbsent(shortcut.getCategoryId(), ignored -> new ArrayList<>())
+                    .add(shortcut);
+        }
+        result.values().forEach(list -> list.sort(
+                Comparator.comparingInt(AppShortcut::getSortOrder)
+                        .thenComparingLong(AppShortcut::getId)
+        ));
         return result;
     }
 
@@ -212,7 +335,9 @@ public final class CategoryTreeService {
     ) {
         AppCategory category = byId.get(categoryId);
         if (category == null || category.getAccountId() != accountId) {
-            throw new IllegalArgumentException("Категория не найдена в текущем аккаунте.");
+            throw new IllegalArgumentException(
+                    "Категория не найдена в текущем аккаунте."
+            );
         }
         return category;
     }
@@ -226,7 +351,10 @@ public final class CategoryTreeService {
         return paths;
     }
 
-    private String buildPath(AppCategory category, Map<Long, AppCategory> byId) {
+    private String buildPath(
+            AppCategory category,
+            Map<Long, AppCategory> byId
+    ) {
         Deque<String> segments = new ArrayDeque<>();
         Set<Long> guard = new HashSet<>();
         AppCategory current = category;

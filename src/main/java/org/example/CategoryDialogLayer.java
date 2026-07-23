@@ -7,17 +7,19 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.util.List;
 import java.util.function.Consumer;
 
-/** Modal in-scene dialogs that stay on the monitor owned by the overlay. */
+/** Modal in-scene dialogs for categories and shortcuts. */
 public final class CategoryDialogLayer extends StackPane {
     private final StackPane dimmer = new StackPane();
     private final VBox dialogCard = new VBox(12);
@@ -28,8 +30,9 @@ public final class CategoryDialogLayer extends StackPane {
         dialogCard.getStyleClass().add("category-dialog-card");
         dialogCard.setAlignment(Pos.CENTER_LEFT);
         dialogCard.setPadding(new Insets(22));
-        dialogCard.setMaxWidth(440);
-        dialogCard.setMinWidth(360);
+        dialogCard.setMaxWidth(520);
+        dialogCard.setMinWidth(380);
+        dialogCard.setMaxHeight(760);
 
         setAlignment(Pos.CENTER);
         getChildren().addAll(dimmer, dialogCard);
@@ -90,7 +93,13 @@ public final class CategoryDialogLayer extends StackPane {
                 "Расположение: " + normalizeParentLabel(parentLabel),
                 form,
                 "Создать",
-                () -> submitDraft(nameField, iconField, pinned, rootCategory, onSubmit)
+                () -> submitCategoryDraft(
+                        nameField,
+                        iconField,
+                        pinned,
+                        rootCategory,
+                        onSubmit
+                )
         );
         nameField.requestFocus();
     }
@@ -115,7 +124,7 @@ public final class CategoryDialogLayer extends StackPane {
                 "ID: " + category.getId(),
                 form,
                 "Сохранить",
-                () -> submitDraft(
+                () -> submitCategoryDraft(
                         nameField,
                         iconField,
                         pinned,
@@ -138,9 +147,14 @@ public final class CategoryDialogLayer extends StackPane {
         targetBox.setMaxWidth(Double.MAX_VALUE);
 
         CategoryMoveTarget current = targetBox.getItems().stream()
-                .filter(target -> sameId(target.categoryId(), category.getParentCategoryId()))
+                .filter(target -> sameId(
+                        target.categoryId(),
+                        category.getParentCategoryId()
+                ))
                 .findFirst()
-                .orElse(targetBox.getItems().isEmpty() ? null : targetBox.getItems().get(0));
+                .orElse(targetBox.getItems().isEmpty()
+                        ? null
+                        : targetBox.getItems().get(0));
         targetBox.getSelectionModel().select(current);
 
         showForm(
@@ -160,22 +174,113 @@ public final class CategoryDialogLayer extends StackPane {
         targetBox.requestFocus();
     }
 
+    /** Compatibility overload retained for step-6 callers. */
+    public void showDelete(AppCategory category, int subtreeSize, Runnable onConfirm) {
+        showDelete(category, subtreeSize, 0, onConfirm);
+    }
+
     public void showDelete(
             AppCategory category,
-            int subtreeSize,
+            int categoryCount,
+            int shortcutCount,
             Runnable onConfirm
     ) {
         Label warning = new Label(
                 "Будет скрыта категория «" + category.getName() + "» и всё её поддерево.\n"
-                        + "Количество категорий: " + Math.max(1, subtreeSize) + ".\n\n"
-                        + "Данные помечаются как удалённые. Восстановление через Ctrl+Z "
-                        + "будет подключено на этапе 9."
+                        + "Категорий: " + Math.max(1, categoryCount) + ".\n"
+                        + "Ярлыков: " + Math.max(0, shortcutCount) + ".\n\n"
+                        + "Все записи получат общий deletionBatchId. "
+                        + "Восстановление через Ctrl+Z будет подключено на этапе 9."
         );
         warning.setWrapText(true);
         warning.getStyleClass().add("category-dialog-warning");
         showForm(
                 "Удалить категорию?",
-                "Операция затронет вложенные категории.",
+                "Операция затронет вложенные категории и ярлыки.",
+                warning,
+                "Удалить",
+                onConfirm,
+                true
+        );
+    }
+
+    public void showCreateShortcut(
+            String categoryLabel,
+            Consumer<ShortcutDraft> onSubmit
+    ) {
+        ShortcutForm form = new ShortcutForm(null);
+        showForm(
+                "Новый ярлык",
+                "Категория: " + normalizeParentLabel(categoryLabel),
+                form.node(),
+                "Создать",
+                () -> submitShortcutDraft(form, onSubmit)
+        );
+        form.nameField().requestFocus();
+    }
+
+    public void showEditShortcut(
+            AppShortcut shortcut,
+            Consumer<ShortcutDraft> onSubmit
+    ) {
+        ShortcutForm form = new ShortcutForm(shortcut);
+        showForm(
+                "Изменить ярлык",
+                "ID: " + shortcut.getId() + " · " + shortcut.getLaunchType().getDisplayName(),
+                form.node(),
+                "Сохранить",
+                () -> submitShortcutDraft(form, onSubmit)
+        );
+        form.nameField().requestFocus();
+        form.nameField().selectAll();
+    }
+
+    public void showMoveShortcut(
+            AppShortcut shortcut,
+            List<ShortcutMoveTarget> targets,
+            Consumer<Long> onSubmit
+    ) {
+        ComboBox<ShortcutMoveTarget> targetBox = new ComboBox<>();
+        targetBox.getStyleClass().add("category-dialog-combo");
+        targetBox.getItems().setAll(targets == null ? List.of() : targets);
+        targetBox.setMaxWidth(Double.MAX_VALUE);
+
+        ShortcutMoveTarget current = targetBox.getItems().stream()
+                .filter(target -> target.categoryId() == shortcut.getCategoryId())
+                .findFirst()
+                .orElse(targetBox.getItems().isEmpty()
+                        ? null
+                        : targetBox.getItems().get(0));
+        targetBox.getSelectionModel().select(current);
+
+        showForm(
+                "Переместить ярлык «" + shortcut.getDisplayName() + "»",
+                "Ярлык всегда должен находиться внутри категории.",
+                field("Категория назначения", targetBox),
+                "Переместить",
+                () -> {
+                    ShortcutMoveTarget selected = targetBox.getValue();
+                    if (selected == null) {
+                        showValidation("Выберите категорию назначения.");
+                        return;
+                    }
+                    onSubmit.accept(selected.categoryId());
+                }
+        );
+        targetBox.requestFocus();
+    }
+
+    public void showDeleteShortcut(AppShortcut shortcut, Runnable onConfirm) {
+        Label warning = new Label(
+                "Ярлык «" + shortcut.getDisplayName() + "» будет мягко удалён.\n"
+                        + "Цель: " + shortcut.getTarget() + "\n\n"
+                        + "Ctrl+Z будет подключён на этапе 9."
+        );
+        warning.setWrapText(true);
+        warning.getStyleClass().add("category-dialog-warning");
+        showForm(
+                "Удалить ярлык?",
+                shortcut.getLaunchType().getDisplayName(),
                 warning,
                 "Удалить",
                 onConfirm,
@@ -213,15 +318,15 @@ public final class CategoryDialogLayer extends StackPane {
         dialogCard.getChildren().clear();
     }
 
-    private void submitDraft(
+    private void submitCategoryDraft(
             TextField nameField,
             TextField iconField,
             CheckBox pinned,
             boolean supportsPinned,
             Consumer<CategoryDraft> onSubmit
     ) {
-        String name = nameField.getText() == null ? "" : nameField.getText().trim();
-        String icon = iconField.getText() == null ? "" : iconField.getText().trim();
+        String name = text(nameField);
+        String icon = text(iconField);
         if (name.isEmpty()) {
             showValidation("Введите название категории.");
             nameField.requestFocus();
@@ -241,6 +346,57 @@ public final class CategoryDialogLayer extends StackPane {
                 name,
                 icon.isEmpty() ? "◇" : icon,
                 supportsPinned && pinned.isSelected()
+        ));
+    }
+
+    private void submitShortcutDraft(
+            ShortcutForm form,
+            Consumer<ShortcutDraft> onSubmit
+    ) {
+        String name = text(form.nameField());
+        String target = text(form.targetField());
+        String arguments = text(form.argumentsField());
+        String workingDirectory = text(form.workingDirectoryField());
+        String iconSource = text(form.iconSourceField());
+        LaunchType launchType = form.typeBox().getValue();
+
+        if (name.isEmpty()) {
+            showValidation("Введите название ярлыка.");
+            form.nameField().requestFocus();
+            return;
+        }
+        if (name.length() > 120) {
+            showValidation("Название ярлыка не должно превышать 120 символов.");
+            form.nameField().requestFocus();
+            return;
+        }
+        if (launchType == null) {
+            showValidation("Выберите тип цели запуска.");
+            form.typeBox().requestFocus();
+            return;
+        }
+        if (target.isEmpty()) {
+            showValidation("Укажите цель запуска.");
+            form.targetField().requestFocus();
+            return;
+        }
+        if (target.length() > 2000 || arguments.length() > 2000) {
+            showValidation("Цель или аргументы слишком длинные.");
+            return;
+        }
+        if (workingDirectory.length() > 1000 || iconSource.length() > 1000) {
+            showValidation("Рабочая папка или источник иконки слишком длинные.");
+            return;
+        }
+
+        onSubmit.accept(new ShortcutDraft(
+                name,
+                launchType,
+                target,
+                emptyToNull(arguments),
+                emptyToNull(workingDirectory),
+                emptyToNull(iconSource),
+                form.enabledBox().isSelected()
         ));
     }
 
@@ -294,6 +450,7 @@ public final class CategoryDialogLayer extends StackPane {
         label.getStyleClass().add("category-dialog-field-label");
         VBox box = new VBox(5, label, control);
         box.setFillWidth(true);
+        VBox.setVgrow(control, Priority.NEVER);
         return box;
     }
 
@@ -350,7 +507,114 @@ public final class CategoryDialogLayer extends StackPane {
         return value == null || value.isBlank() ? "Корень категорий" : value;
     }
 
+    private String text(TextField field) {
+        return field.getText() == null ? "" : field.getText().trim();
+    }
+
+    private String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private boolean sameId(Long first, Long second) {
         return first == null ? second == null : first.equals(second);
+    }
+
+    private final class ShortcutForm {
+        private final TextField nameField = new TextField();
+        private final ComboBox<LaunchType> typeBox = new ComboBox<>();
+        private final TextField targetField = new TextField();
+        private final TextField argumentsField = new TextField();
+        private final TextField workingDirectoryField = new TextField();
+        private final TextField iconSourceField = new TextField();
+        private final CheckBox enabledBox = new CheckBox("Ярлык включён");
+        private final ScrollPane scrollPane;
+
+        private ShortcutForm(AppShortcut shortcut) {
+            nameField.getStyleClass().add("category-dialog-input");
+            typeBox.getStyleClass().add("category-dialog-combo");
+            targetField.getStyleClass().add("category-dialog-input");
+            argumentsField.getStyleClass().add("category-dialog-input");
+            workingDirectoryField.getStyleClass().add("category-dialog-input");
+            iconSourceField.getStyleClass().add("category-dialog-input");
+            enabledBox.getStyleClass().add("category-dialog-check");
+
+            nameField.setPromptText("Например: IntelliJ IDEA");
+            targetField.setPromptText("Путь, URL или идентификатор Store-приложения");
+            argumentsField.setPromptText("Необязательно; запуск подключится на этапе 8");
+            workingDirectoryField.setPromptText("Необязательно");
+            iconSourceField.setPromptText("Эмодзи, ключ или путь к иконке");
+
+            typeBox.getItems().setAll(LaunchType.values());
+            typeBox.setMaxWidth(Double.MAX_VALUE);
+            enabledBox.setSelected(true);
+
+            if (shortcut != null) {
+                nameField.setText(shortcut.getDisplayName());
+                typeBox.getSelectionModel().select(shortcut.getLaunchType());
+                targetField.setText(shortcut.getTarget());
+                argumentsField.setText(nullToEmpty(shortcut.getArguments()));
+                workingDirectoryField.setText(nullToEmpty(shortcut.getWorkingDirectory()));
+                iconSourceField.setText(nullToEmpty(shortcut.getIconSource()));
+                enabledBox.setSelected(shortcut.isEnabled());
+            } else {
+                typeBox.getSelectionModel().select(LaunchType.EXECUTABLE);
+            }
+
+            VBox form = new VBox(
+                    9,
+                    field("Название", nameField),
+                    field("Тип", typeBox),
+                    field("Цель", targetField),
+                    field("Аргументы", argumentsField),
+                    field("Рабочая папка", workingDirectoryField),
+                    field("Источник иконки", iconSourceField),
+                    enabledBox
+            );
+            form.setFillWidth(true);
+
+            scrollPane = new ScrollPane(form);
+            scrollPane.getStyleClass().add("shortcut-dialog-scroll");
+            scrollPane.setFitToWidth(true);
+            scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+            scrollPane.setPrefViewportHeight(430);
+            scrollPane.setMaxHeight(470);
+        }
+
+        private Node node() {
+            return scrollPane;
+        }
+
+        private TextField nameField() {
+            return nameField;
+        }
+
+        private ComboBox<LaunchType> typeBox() {
+            return typeBox;
+        }
+
+        private TextField targetField() {
+            return targetField;
+        }
+
+        private TextField argumentsField() {
+            return argumentsField;
+        }
+
+        private TextField workingDirectoryField() {
+            return workingDirectoryField;
+        }
+
+        private TextField iconSourceField() {
+            return iconSourceField;
+        }
+
+        private CheckBox enabledBox() {
+            return enabledBox;
+        }
+
+        private String nullToEmpty(String value) {
+            return value == null ? "" : value;
+        }
     }
 }

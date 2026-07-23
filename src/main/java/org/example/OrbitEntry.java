@@ -8,17 +8,21 @@ import java.util.Objects;
 public final class OrbitEntry {
     public enum Kind {
         CATEGORY,
+        SHORTCUT,
         ITEM
     }
 
     private final String id;
     private final Long categoryId;
+    private final Long shortcutId;
     private final String title;
     private final String icon;
     private final String description;
     private final Kind kind;
     private final boolean rootPinned;
     private final int sortOrder;
+    private final boolean enabled;
+    private final LaunchType launchType;
     private final List<OrbitEntry> children;
 
     public OrbitEntry(
@@ -32,14 +36,47 @@ public final class OrbitEntry {
             int sortOrder,
             List<OrbitEntry> children
     ) {
+        this(
+                id,
+                categoryId,
+                null,
+                title,
+                icon,
+                description,
+                kind,
+                rootPinned,
+                sortOrder,
+                true,
+                null,
+                children
+        );
+    }
+
+    public OrbitEntry(
+            String id,
+            Long categoryId,
+            Long shortcutId,
+            String title,
+            String icon,
+            String description,
+            Kind kind,
+            boolean rootPinned,
+            int sortOrder,
+            boolean enabled,
+            LaunchType launchType,
+            List<OrbitEntry> children
+    ) {
         this.id = normalize(id, "entry");
         this.categoryId = categoryId;
+        this.shortcutId = shortcutId;
         this.title = normalize(title, "Без названия");
         this.icon = normalize(icon, "◇");
         this.description = normalize(description, "Нет описания");
         this.kind = Objects.requireNonNull(kind, "kind");
         this.rootPinned = rootPinned;
         this.sortOrder = Math.max(0, sortOrder);
+        this.enabled = enabled;
+        this.launchType = launchType;
         this.children = children == null ? List.of() : List.copyOf(children);
     }
 
@@ -52,7 +89,7 @@ public final class OrbitEntry {
             Kind kind,
             List<OrbitEntry> children
     ) {
-        this(id, null, title, icon, description, kind, false, 0, children);
+        this(id, null, null, title, icon, description, kind, false, 0, true, null, children);
     }
 
     public static OrbitEntry category(
@@ -67,12 +104,15 @@ public final class OrbitEntry {
         return new OrbitEntry(
                 "category:" + categoryId,
                 categoryId,
+                null,
                 title,
                 icon,
                 description,
                 Kind.CATEGORY,
                 rootPinned,
                 sortOrder,
+                true,
+                null,
                 children
         );
     }
@@ -87,13 +127,37 @@ public final class OrbitEntry {
         return new OrbitEntry(
                 id,
                 null,
+                null,
                 title,
                 icon,
                 description,
                 Kind.CATEGORY,
                 false,
                 0,
+                true,
+                null,
                 children == null ? List.of() : Arrays.asList(children)
+        );
+    }
+
+    public static OrbitEntry shortcut(AppShortcut shortcut) {
+        Objects.requireNonNull(shortcut, "shortcut");
+        String description = shortcut.getLaunchType().getDisplayName()
+                + "\nЦель: " + shortcut.getTarget()
+                + (shortcut.isEnabled() ? "" : "\nЯрлык отключён");
+        return new OrbitEntry(
+                "shortcut:" + shortcut.getId(),
+                null,
+                shortcut.getId(),
+                shortcut.getDisplayName(),
+                shortcut.getDisplayIcon(),
+                description,
+                Kind.SHORTCUT,
+                false,
+                shortcut.getSortOrder(),
+                shortcut.isEnabled(),
+                shortcut.getLaunchType(),
+                List.of()
         );
     }
 
@@ -106,12 +170,15 @@ public final class OrbitEntry {
         return new OrbitEntry(
                 id,
                 null,
+                null,
                 title,
                 icon,
                 description,
                 Kind.ITEM,
                 false,
                 0,
+                true,
+                null,
                 List.of()
         );
     }
@@ -122,6 +189,10 @@ public final class OrbitEntry {
 
     public Long getCategoryId() {
         return categoryId;
+    }
+
+    public Long getShortcutId() {
+        return shortcutId;
     }
 
     public String getTitle() {
@@ -148,6 +219,14 @@ public final class OrbitEntry {
         return sortOrder;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public LaunchType getLaunchType() {
+        return launchType;
+    }
+
     public List<OrbitEntry> getChildren() {
         return children;
     }
@@ -156,12 +235,20 @@ public final class OrbitEntry {
         return kind == Kind.CATEGORY;
     }
 
+    public boolean isShortcut() {
+        return kind == Kind.SHORTCUT;
+    }
+
     public boolean hasChildren() {
         return !children.isEmpty();
     }
 
     public boolean isDatabaseCategory() {
         return isCategory() && categoryId != null && categoryId > 0;
+    }
+
+    public boolean isDatabaseShortcut() {
+        return isShortcut() && shortcutId != null && shortcutId > 0;
     }
 
     private static String normalize(String value, String fallback) {

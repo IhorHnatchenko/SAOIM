@@ -8,24 +8,51 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** Transactional business service for the category tree. */
+/** Transactional business service for the category tree and mixed orbit order. */
 public final class CategoryService {
     private final CategoryRepository repository;
+    private final ShortcutRepository shortcutRepository;
     private final CategoryTreeService treeService;
     private final PinningService pinningService;
+    private final OrbitOrderService orderService;
 
     public CategoryService() {
-        this(new CategoryRepository(), new CategoryTreeService(), new PinningService());
+        this(
+                new CategoryRepository(),
+                new ShortcutRepository(),
+                new CategoryTreeService(),
+                new PinningService(),
+                new OrbitOrderService()
+        );
     }
 
+    /** Compatibility constructor used by stage-6 tests/callers. */
     public CategoryService(
             CategoryRepository repository,
             CategoryTreeService treeService,
             PinningService pinningService
     ) {
+        this(
+                repository,
+                new ShortcutRepository(),
+                treeService,
+                pinningService,
+                new OrbitOrderService(repository, new ShortcutRepository())
+        );
+    }
+
+    public CategoryService(
+            CategoryRepository repository,
+            ShortcutRepository shortcutRepository,
+            CategoryTreeService treeService,
+            PinningService pinningService,
+            OrbitOrderService orderService
+    ) {
         this.repository = repository;
+        this.shortcutRepository = shortcutRepository;
         this.treeService = treeService;
         this.pinningService = pinningService;
+        this.orderService = orderService;
     }
 
     public CategorySnapshot loadSnapshot(long accountId) throws SQLException {
@@ -39,8 +66,13 @@ public final class CategoryService {
                         accountId,
                         false
                 );
+                List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
+                        connection,
+                        accountId,
+                        false
+                );
                 connection.commit();
-                return treeService.buildSnapshot(accountId, categories);
+                return treeService.buildSnapshot(accountId, categories, shortcuts);
             } catch (Exception exception) {
                 rollbackQuietly(connection);
                 throw rethrow(exception);
@@ -55,6 +87,7 @@ public final class CategoryService {
     ) throws SQLException {
         validateAccount(accountId);
         CategoryDraft validated = validateDraft(draft);
+
         try (Connection connection = DatabaseManager.getConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -63,12 +96,20 @@ public final class CategoryService {
                         accountId,
                         true
                 );
+                List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
+                        connection,
+                        accountId,
+                        true
+                );
                 AppCategory parent = parentCategoryId == null
                         ? null
                         : requireCategory(categories, accountId, parentCategoryId);
                 if (parent != null && parent.getAccountId() != accountId) {
-                    throw new IllegalArgumentException("Родитель принадлежит другому аккаунту.");
+                    throw new IllegalArgumentException(
+                            "Родитель принадлежит другому аккаунту."
+                    );
                 }
+
                 boolean pin = parentCategoryId == null && validated.rootPinned();
                 if (pin) {
                     AppCategory virtualCategory = new AppCategory(
@@ -84,9 +125,10 @@ public final class CategoryService {
                     );
                     pinningService.validateToggle(categories, virtualCategory, true);
                 }
-                int sortOrder = repository.getNextSortOrder(
-                        connection,
-                        accountId,
+
+                int sortOrder = orderService.nextSortOrder(
+                        categories,
+                        shortcuts,
                         parentCategoryId
                 );
                 long id = repository.insert(
@@ -131,7 +173,11 @@ public final class CategoryService {
                         validated.iconKey()
                 );
                 if (category.isRoot()) {
-                    pinningService.validateToggle(categories, category, validated.rootPinned());
+                    pinningService.validateToggle(
+                            categories,
+                            category,
+                            validated.rootPinned()
+                    );
                     repository.setRootPinned(
                             connection,
                             accountId,
@@ -161,6 +207,11 @@ public final class CategoryService {
                         accountId,
                         true
                 );
+                List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
+                        connection,
+                        accountId,
+                        true
+                );
                 AppCategory category = requireCategory(categories, accountId, categoryId);
                 treeService.validateMove(
                         accountId,
@@ -172,9 +223,10 @@ public final class CategoryService {
                     connection.commit();
                     return;
                 }
-                int sortOrder = repository.getNextSortOrder(
-                        connection,
-                        accountId,
+
+                int sortOrder = orderService.nextSortOrder(
+                        categories,
+                        shortcuts,
                         newParentCategoryId
                 );
                 repository.updateParentAndOrder(
@@ -184,7 +236,15 @@ public final class CategoryService {
                         newParentCategoryId,
                         sortOrder
                 );
-                normalizeSiblings(connection, accountId, categories, category.getParentCategoryId(), categoryId);
+                orderService.normalize(
+                        connection,
+                        accountId,
+                        categories,
+                        shortcuts,
+                        category.getParentCategoryId(),
+                        OrbitOrderService.RecordKind.CATEGORY,
+                        categoryId
+                );
                 connection.commit();
             } catch (Exception exception) {
                 rollbackQuietly(connection);
@@ -210,28 +270,24 @@ public final class CategoryService {
                         accountId,
                         true
                 );
+                List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
+                        connection,
+                        accountId,
+                        true
+                );
                 AppCategory category = requireCategory(categories, accountId, categoryId);
-                List<AppCategory> siblings = treeService.siblingsOf(categories, category);
-                int index = indexOf(siblings, categoryId);
-                int targetIndex = index + (direction < 0 ? -1 : 1);
-                if (index < 0 || targetIndex < 0 || targetIndex >= siblings.size()) {
-                    connection.commit();
-                    return false;
-                }
-                // Normalize first so duplicate/legacy sort_order values cannot break a swap.
-                for (int i = 0; i < siblings.size(); i++) {
-                    repository.updateSortOrder(
-                            connection,
-                            accountId,
-                            siblings.get(i).getId(),
-                            i
-                    );
-                }
-                AppCategory target = siblings.get(targetIndex);
-                repository.updateSortOrder(connection, accountId, categoryId, targetIndex);
-                repository.updateSortOrder(connection, accountId, target.getId(), index);
+                boolean changed = orderService.moveRelative(
+                        connection,
+                        accountId,
+                        categories,
+                        shortcuts,
+                        category.getParentCategoryId(),
+                        OrbitOrderService.RecordKind.CATEGORY,
+                        categoryId,
+                        direction
+                );
                 connection.commit();
-                return true;
+                return changed;
             } catch (Exception exception) {
                 rollbackQuietly(connection);
                 throw rethrow(exception);
@@ -252,7 +308,12 @@ public final class CategoryService {
                 AppCategory category = requireCategory(categories, accountId, categoryId);
                 boolean requested = !category.isRootPinned();
                 pinningService.validateToggle(categories, category, requested);
-                repository.setRootPinned(connection, accountId, categoryId, requested);
+                repository.setRootPinned(
+                        connection,
+                        accountId,
+                        categoryId,
+                        requested
+                );
                 connection.commit();
             } catch (Exception exception) {
                 rollbackQuietly(connection);
@@ -276,9 +337,28 @@ public final class CategoryService {
         ).size();
     }
 
+    public int countShortcutsInSubtree(CategorySnapshot snapshot, long categoryId) {
+        if (snapshot == null) {
+            return 0;
+        }
+        Set<Long> categoryIds = new LinkedHashSet<>();
+        categoryIds.add(categoryId);
+        categoryIds.addAll(treeService.collectDescendantIds(
+                snapshot.getCategories(),
+                categoryId
+        ));
+        int count = 0;
+        for (AppShortcut shortcut : snapshot.getShortcuts()) {
+            if (categoryIds.contains(shortcut.getCategoryId())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /**
-     * Step 6 already uses soft deletion so step 9 can later attach Ctrl+Z to the
-     * same deletion_batch_id without changing the storage contract.
+     * Deletes the complete category subtree and all shortcuts in the same
+     * transaction. The shared batch id will be used by UndoManager at step 9.
      */
     public String softDeleteSubtree(long accountId, long categoryId) throws SQLException {
         validateAccount(accountId);
@@ -290,22 +370,37 @@ public final class CategoryService {
                         accountId,
                         true
                 );
+                List<AppShortcut> shortcuts = shortcutRepository.findActiveByAccount(
+                        connection,
+                        accountId,
+                        true
+                );
                 AppCategory category = requireCategory(categories, accountId, categoryId);
                 Set<Long> ids = new LinkedHashSet<>();
                 ids.add(category.getId());
                 ids.addAll(treeService.collectDescendantIds(categories, categoryId));
+
                 String batchId = UUID.randomUUID().toString();
+                List<Long> categoryIds = new ArrayList<>(ids);
+                shortcutRepository.softDeleteByCategoryIds(
+                        connection,
+                        accountId,
+                        categoryIds,
+                        batchId
+                );
                 repository.softDelete(
                         connection,
                         accountId,
-                        new ArrayList<>(ids),
+                        categoryIds,
                         batchId
                 );
-                normalizeSiblings(
+                orderService.normalize(
                         connection,
                         accountId,
                         categories,
+                        shortcuts,
                         category.getParentCategoryId(),
+                        OrbitOrderService.RecordKind.CATEGORY,
                         categoryId
                 );
                 connection.commit();
@@ -325,28 +420,6 @@ public final class CategoryService {
             return List.of();
         }
         return treeService.buildMoveTargets(snapshot.getCategories(), categoryId);
-    }
-
-    private void normalizeSiblings(
-            Connection connection,
-            long accountId,
-            List<AppCategory> categories,
-            Long parentCategoryId,
-            long excludedCategoryId
-    ) throws SQLException {
-        int order = 0;
-        for (AppCategory category : categories.stream()
-                .filter(candidate -> candidate.getId() != excludedCategoryId)
-                .filter(candidate -> sameParent(
-                        candidate.getParentCategoryId(),
-                        parentCategoryId
-                ))
-                .sorted(java.util.Comparator
-                        .comparingInt(AppCategory::getSortOrder)
-                        .thenComparingLong(AppCategory::getId))
-                .toList()) {
-            repository.updateSortOrder(connection, accountId, category.getId(), order++);
-        }
     }
 
     private AppCategory requireCategory(
@@ -373,24 +446,19 @@ public final class CategoryService {
             throw new IllegalArgumentException("Введите название категории.");
         }
         if (name.length() > 80) {
-            throw new IllegalArgumentException("Название категории не должно превышать 80 символов.");
+            throw new IllegalArgumentException(
+                    "Название категории не должно превышать 80 символов."
+            );
         }
         if (icon.isEmpty()) {
             icon = "◇";
         }
         if (icon.length() > 16) {
-            throw new IllegalArgumentException("Значок не должен превышать 16 символов.");
+            throw new IllegalArgumentException(
+                    "Значок не должен превышать 16 символов."
+            );
         }
         return new CategoryDraft(name, icon, draft.rootPinned());
-    }
-
-    private int indexOf(List<AppCategory> categories, long categoryId) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (categories.get(i).getId() == categoryId) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private boolean sameParent(Long first, Long second) {
