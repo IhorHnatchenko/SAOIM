@@ -29,6 +29,11 @@ public final class MouseHookHandler implements NativeMouseInputListener {
 
     @Override
     public void nativeMousePressed(NativeMouseEvent event) {
+        if (event.getButton() == NativeMouseEvent.BUTTON2) {
+            gestureRouter.handleSecondaryClick(event.getX(), event.getY());
+            return;
+        }
+
         if (event.getButton() != NativeMouseEvent.BUTTON1) {
             return;
         }

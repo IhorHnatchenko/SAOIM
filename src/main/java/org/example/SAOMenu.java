@@ -2,6 +2,7 @@ package org.example;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
@@ -9,6 +10,7 @@ import javafx.scene.control.Button;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -47,6 +49,9 @@ public class SAOMenu {
     private PauseTransition hideFallback;
     private long hideRequestGeneration;
 
+    private static final long ESCAPE_DEBOUNCE_NANOS = 180_000_000L;
+    private long lastEscapeRequestNanos;
+
     public void init() {
         if (mainStage != null) {
             return;
@@ -74,14 +79,6 @@ public class SAOMenu {
         profileView.prefWidthProperty().bind(rootPane.widthProperty());
         profileView.prefHeightProperty().bind(rootPane.heightProperty());
 
-        rootPane.setOnMouseReleased(event -> {
-            boolean emptyOverlayArea = event.getTarget() == rootPane
-                    || event.getTarget() == profileView;
-            if (event.getButton() == MouseButton.SECONDARY && emptyOverlayArea) {
-                event.consume();
-                hideMenu();
-            }
-        });
         rootPane.setOnContextMenuRequested(event -> event.consume());
 
         Scene scene = new Scene(rootPane);
@@ -89,6 +86,7 @@ public class SAOMenu {
         loadTheme(scene);
         loadTheme(profileView);
 
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, this::handleSceneMousePressed);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleSceneKeyPressed);
 
         mainStage = new Stage();
@@ -451,11 +449,60 @@ public class SAOMenu {
         }
 
         event.consume();
+        handleEscapeRequest();
+    }
+
+    /**
+     * Shared Escape entry point for both JavaFX and the native keyboard hook.
+     * The debounce prevents the same physical press from being handled twice.
+     */
+    public void handleEscapeRequest() {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(this::handleEscapeRequest);
+            return;
+        }
+
+        long now = System.nanoTime();
+        if (now - lastEscapeRequestNanos < ESCAPE_DEBOUNCE_NANOS) {
+            return;
+        }
+        lastEscapeRequestNanos = now;
+
+        MenuState state = stateController.getState();
         if (state == MenuState.PROFILE) {
             if (!profileView.handleEscape()) {
                 returnToStandardMenu();
             }
         } else if (state == MenuState.STANDARD_MENU) {
+            hideMenu();
+        }
+    }
+
+    /**
+     * Scene-level right-click handling uses coordinates rather than target
+     * identity. CSS and transparent nodes may change the picked target, while
+     * the menu bounds remain stable.
+     */
+    private void handleSceneMousePressed(MouseEvent event) {
+        if (event == null || event.getButton() != MouseButton.SECONDARY) {
+            return;
+        }
+
+        MenuState state = stateController.getState();
+        if (state == MenuState.STANDARD_MENU) {
+            Bounds menuBounds = menuContainer.localToScene(
+                    menuContainer.getBoundsInLocal()
+            );
+            if (!menuBounds.contains(event.getSceneX(), event.getSceneY())) {
+                event.consume();
+                hideMenu();
+            }
+            return;
+        }
+
+        if (state == MenuState.PROFILE
+                && (event.getTarget() == rootPane || event.getTarget() == profileView)) {
+            event.consume();
             hideMenu();
         }
     }

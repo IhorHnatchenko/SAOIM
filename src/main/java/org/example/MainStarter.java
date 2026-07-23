@@ -72,7 +72,10 @@ public class MainStarter extends Application {
             );
             GlobalScreen.addNativeMouseListener(mouseHook);
             GlobalScreen.addNativeMouseMotionListener(mouseHook);
-            System.out.println("[System] Глобальный хук мыши успешно запущен!");
+            GlobalScreen.addNativeKeyListener(
+                    new GlobalKeyboardHandler(MainStarter::handleGlobalEscape)
+            );
+            System.out.println("[System] Глобальные хуки мыши и клавиатуры успешно запущены!");
         } catch (NativeHookException exception) {
             System.err.println(
                     "[System] КРИТИЧЕСКАЯ ОШИБКА: Не удалось запустить хук мыши: " +
@@ -129,6 +132,18 @@ public class MainStarter extends Application {
      * this method from its own thread, therefore the actual UI operation is
      * always transferred to the JavaFX Application Thread.
      */
+    /**
+     * Handles Escape from JNativeHook. This remains available even if a click
+     * on a fully transparent overlay pixel gives keyboard focus to Explorer.
+     */
+    public static void handleGlobalEscape() {
+        Platform.runLater(() -> {
+            if (saoMenu != null) {
+                saoMenu.handleEscapeRequest();
+            }
+        });
+    }
+
     public static void hideOverlay() {
         Platform.runLater(MainStarter::hideOverlayNow);
     }

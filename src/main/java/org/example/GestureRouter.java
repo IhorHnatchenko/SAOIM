@@ -65,6 +65,25 @@ public final class GestureRouter {
         }
     }
 
+
+    /**
+     * A native secondary-click fallback for the standard menu.
+     *
+     * Transparent JavaFX pixels are not guaranteed to receive mouse events on
+     * every Windows/DPI configuration. JNativeHook sees the click regardless,
+     * so a right click dismisses the visible standard menu reliably.
+     */
+    public void handleSecondaryClick(int screenX, int screenY) {
+        if (getCurrentState() != MenuState.STANDARD_MENU) {
+            return;
+        }
+        System.out.println(
+                "[Gesture] Правая кнопка мыши: STANDARD_MENU -> HIDDEN "
+                        + "(" + screenX + ", " + screenY + ")"
+        );
+        hideStandardMenuAction.run();
+    }
+
     private MenuState getCurrentState() {
         MenuState state = stateSupplier.get();
         return state == null ? MenuState.HIDDEN : state;
