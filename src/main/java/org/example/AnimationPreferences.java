@@ -2,13 +2,7 @@ package org.example;
 
 import javafx.util.Duration;
 
-/**
- * Central animation settings for the overlay.
- *
- * <p>Animations are enabled by default. They can be disabled with
- * {@code -Dsaoim.animations=false}. Their speed can be adjusted with
- * {@code -Dsaoim.animationScale=0.75}.</p>
- */
+/** Central animation and performance settings for the overlay. */
 public final class AnimationPreferences {
     private static final double MIN_SCALE = 0.25;
     private static final double MAX_SCALE = 3.0;
@@ -16,11 +10,18 @@ public final class AnimationPreferences {
     private AnimationPreferences() {
     }
 
+    /** Disable every transition with -Dsaoim.animations=false. */
     public static boolean isEnabled() {
-        String property = System.getProperty("saoim.animations", "true");
-        return !"false".equalsIgnoreCase(property)
-                && !"0".equals(property)
-                && !"off".equalsIgnoreCase(property);
+        return readBoolean("saoim.animations", true);
+    }
+
+    /**
+     * Continuous ring/glow animations are disabled by default because they can
+     * keep the JavaFX pulse and GPU busy even while the user is only editing
+     * data. They may be restored with -Dsaoim.ambientAnimations=true.
+     */
+    public static boolean isAmbientEnabled() {
+        return isEnabled() && readBoolean("saoim.ambientAnimations", false);
     }
 
     public static double getDurationScale() {
@@ -38,5 +39,15 @@ public final class AnimationPreferences {
 
     public static Duration duration(double milliseconds) {
         return Duration.millis(Math.max(1.0, milliseconds * getDurationScale()));
+    }
+
+    private static boolean readBoolean(String key, boolean defaultValue) {
+        String fallback = defaultValue ? "true" : "false";
+        String value = System.getProperty(key, fallback).trim();
+        return switch (value.toLowerCase()) {
+            case "true", "1", "on", "yes" -> true;
+            case "false", "0", "off", "no" -> false;
+            default -> defaultValue;
+        };
     }
 }

@@ -7,10 +7,14 @@ import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.CornerRadii;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -28,6 +32,13 @@ import java.util.Stack;
 public class SAOMenu {
     private static final double MENU_WIDTH = 300;
     private static final double MENU_HEIGHT = 520;
+
+    /**
+     * A fully transparent JavaFX window may be click-through on some Windows
+     * and mixed-DPI configurations. One alpha step keeps the overlay
+     * hit-testable while remaining visually indistinguishable from transparent.
+     */
+    private static final double INPUT_SURFACE_ALPHA = 1.0 / 255.0;
 
     private final Stack<List<MenuNode>> history = new Stack<>();
     private final MenuScreenContext screenContext = new MenuScreenContext();
@@ -75,6 +86,11 @@ public class SAOMenu {
         rootPane.getStyleClass().add("sao-overlay-root");
         rootPane.setPickOnBounds(true);
         rootPane.setFocusTraversable(true);
+        rootPane.setBackground(new Background(new BackgroundFill(
+                Color.rgb(0, 0, 0, INPUT_SURFACE_ALPHA),
+                CornerRadii.EMPTY,
+                Insets.EMPTY
+        )));
 
         profileView.prefWidthProperty().bind(rootPane.widthProperty());
         profileView.prefHeightProperty().bind(rootPane.heightProperty());
@@ -87,6 +103,11 @@ public class SAOMenu {
         loadTheme(profileView);
 
         scene.addEventFilter(MouseEvent.MOUSE_PRESSED, this::handleSceneMousePressed);
+        scene.addEventFilter(MouseEvent.MOUSE_RELEASED, this::handleSceneMouseReleased);
+        scene.addEventFilter(
+                ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                event -> event.consume()
+        );
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleSceneKeyPressed);
 
         mainStage = new Stage();
@@ -479,32 +500,60 @@ public class SAOMenu {
     }
 
     /**
-     * Scene-level right-click handling uses coordinates rather than target
-     * identity. CSS and transparent nodes may change the picked target, while
-     * the menu bounds remain stable.
+     * The secondary-button press is always consumed while the overlay is
+     * visible. The Stage is deliberately kept alive until MOUSE_RELEASED so
+     * Windows Explorer cannot receive the second half of the click and open
+     * its desktop context menu.
      */
     private void handleSceneMousePressed(MouseEvent event) {
         if (event == null || event.getButton() != MouseButton.SECONDARY) {
             return;
         }
 
+        if (stateController.getState() != MenuState.HIDDEN) {
+            event.consume();
+        }
+    }
+
+    /**
+     * Hides the overlay only after JavaFX has received and consumed the whole
+     * right-click sequence. Coordinate checks are stable even when CSS changes
+     * the concrete picked child node.
+     */
+    private void handleSceneMouseReleased(MouseEvent event) {
+        if (event == null || event.getButton() != MouseButton.SECONDARY) {
+            return;
+        }
+
         MenuState state = stateController.getState();
+        if (state == MenuState.HIDDEN) {
+            return;
+        }
+
+        event.consume();
+
         if (state == MenuState.STANDARD_MENU) {
-            Bounds menuBounds = menuContainer.localToScene(
-                    menuContainer.getBoundsInLocal()
-            );
-            if (!menuBounds.contains(event.getSceneX(), event.getSceneY())) {
-                event.consume();
+            if (!isPointInsideStandardMenu(event.getSceneX(), event.getSceneY())) {
                 hideMenu();
             }
             return;
         }
 
-        if (state == MenuState.PROFILE
-                && (event.getTarget() == rootPane || event.getTarget() == profileView)) {
-            event.consume();
+        if (state == MenuState.PROFILE && isProfileBackgroundTarget(event)) {
             hideMenu();
         }
+    }
+
+    private boolean isPointInsideStandardMenu(double sceneX, double sceneY) {
+        Bounds menuBounds = menuContainer.localToScene(
+                menuContainer.getBoundsInLocal()
+        );
+        return menuBounds != null && menuBounds.contains(sceneX, sceneY);
+    }
+
+    private boolean isProfileBackgroundTarget(MouseEvent event) {
+        Object target = event.getTarget();
+        return target == rootPane || target == profileView;
     }
 
     private void prepareVisibleStage() {

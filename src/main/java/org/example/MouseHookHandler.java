@@ -6,8 +6,10 @@ import com.github.kwhat.jnativehook.mouse.NativeMouseInputListener;
 import java.util.Objects;
 
 /**
- * Recognizes the physical top-left-corner swipe. Permission and navigation
- * decisions are delegated to GestureRouter.
+ * Recognizes only the physical top-left-corner swipe. Secondary-button input
+ * is intentionally handled by the JavaFX overlay so the complete press/release
+ * sequence stays inside one window and Windows Explorer cannot open its own
+ * context menu.
  */
 public final class MouseHookHandler implements NativeMouseInputListener {
 
@@ -29,11 +31,6 @@ public final class MouseHookHandler implements NativeMouseInputListener {
 
     @Override
     public void nativeMousePressed(NativeMouseEvent event) {
-        if (event.getButton() == NativeMouseEvent.BUTTON2) {
-            gestureRouter.handleSecondaryClick(event.getX(), event.getY());
-            return;
-        }
-
         if (event.getButton() != NativeMouseEvent.BUTTON1) {
             return;
         }
@@ -46,12 +43,6 @@ public final class MouseHookHandler implements NativeMouseInputListener {
                 startY,
                 ZONE_SIZE
         );
-
-        if (startedInActivationZone) {
-            System.out.println(
-                    "[Gesture] Нажатие в левом верхнем углу монитора. Ожидаем свайп вниз..."
-            );
-        }
     }
 
     @Override
@@ -63,7 +54,6 @@ public final class MouseHookHandler implements NativeMouseInputListener {
         int dragDistance = event.getY() - startY;
         if (dragDistance >= MIN_DRAG_DISTANCE) {
             gestureRecognized = true;
-            System.out.println("[Gesture] Свайп вниз распознан.");
         }
     }
 
@@ -75,8 +65,6 @@ public final class MouseHookHandler implements NativeMouseInputListener {
 
         try {
             if (startedInActivationZone && gestureRecognized) {
-                // The monitor is selected from the activation point, not from
-                // the release point after the cursor has moved down.
                 gestureRouter.handleOpenGesture(startX, startY);
             }
         } finally {
