@@ -1,0 +1,48 @@
+name: SAOIM CI
+
+on:
+  push:
+    branches:
+      - master
+      - "feature/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests on ${{ matrix.os }} / JDK ${{ matrix.java }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        java: ["19"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Unit tests and package verification
+        run: mvn -B -ntp clean verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}-jdk${{ matrix.java }}
+          if-no-files-found: ignore
+          path: |
+            target/surefire-reports/**
+            target/failsafe-reports/**
+            target/site/jacoco/**
