@@ -1,3 +1,25 @@
+New-Item target\installer -ItemType Directory -Force
+
+jpackage `
+  --type exe `
+  --name SAOIM `
+  --app-version 0.1.0 `
+  --vendor "Ihor Hnatchenko" `
+  --description "SAO-inspired Windows command overlay" `
+  --input target\jpackage-input `
+  --main-jar SAOIM-0.1.0.jar `
+  --main-class org.example.Launcher `
+  --dest target\installer `
+  --win-per-user-install `
+  --win-dir-chooser `
+  --win-menu `
+  --win-menu-group "SAOIM" `
+  --win-shortcut-prompt `
+  --win-upgrade-uuid "dcffced4-48eb-4d9c-9387-4fdff2a425a4"
+
+
+
+
 ＋↗ — создать ярлык внутри открытой категории
 
 ✎    изменить
