@@ -9,7 +9,7 @@
     <version>0.1.0</version>
 
     <properties>
-        <maven.compiler.release>19</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.11.4</junit.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
